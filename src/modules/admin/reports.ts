@@ -2,6 +2,8 @@ import { Buffer } from "node:buffer";
 import type postgres from "postgres";
 import { AppError } from "../../platform/errors";
 
+import { reportLinuxWaitlist } from "./waitlist";
+
 const CREDIT_UNITS = "10000";
 const PAGE_SIZE = 50;
 type Cursor = { created_at: string; id: string };
@@ -51,6 +53,7 @@ export function createAdminReports(sql: postgres.Sql) {
   }
 
   return {
+    linuxWaitlist: (cursor?: string) => reportLinuxWaitlist(sql, cursor),
     async overview(days: 1 | 7 | 30) {
       if (days !== 1 && days !== 7 && days !== 30) throw new AppError("invalid_request");
       return snapshot(async (tx) => {

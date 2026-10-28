@@ -1,4 +1,5 @@
 import { authenticate } from "../../modules/identity";
+import { createWaitlistRoutes, type WaitlistMailer, waitlistMailer } from "../../modules/waitlist";
 import { createClientAddressResolver } from "../../platform/client-address";
 import { installHttpMiddleware } from "./middleware";
 import { installPublicRoutes } from "./public-routes";
@@ -42,6 +43,7 @@ export function createApp(
   peerAddress: (r: Request) => string = () => "127.0.0.1",
   cloud?: CloudService,
   mailer: Mailer = resendMailer(config),
+  waitlistDelivery: WaitlistMailer = waitlistMailer(config),
 ) {
   const app = new Hono<{ Variables: { identity: Session } }>();
   const billingService = createBillingService(config, db, provider, cloud?.policy ?? null);
@@ -53,6 +55,7 @@ export function createApp(
     resolveClientAddress(peerAddress(request), request.headers);
   installHttpMiddleware(app, config, db, clientIp);
   installPublicRoutes(app, config, db, cloud);
+  app.route("/", createWaitlistRoutes(config, db, waitlistDelivery, clientIp));
   app.route("/api/auth", createIdentityRoutes(config, db, auth, clientIp));
   app.route("/", createBillingWebhookRoutes(config, db));
   app.use("*", async (c, next) => {

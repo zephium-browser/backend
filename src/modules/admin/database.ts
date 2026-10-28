@@ -82,6 +82,7 @@ export async function assertAdminDatabasePrivileges(
     "admin_report_requests",
     "admin_report_billing",
     "admin_report_budget",
+    "admin_report_linux_waitlist",
   ];
   for (const [connection, allowed] of [
     [auth, allowedAuth],

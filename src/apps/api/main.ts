@@ -2,6 +2,7 @@ import { createCloudService, nativeTransport } from "../../modules/ai";
 import { polarProvider } from "../../modules/billing";
 import { assertGrantEligibilityReady, createAuth, resendMailer } from "../../modules/identity";
 import { assertActivePolicy, loadPolicy } from "../../modules/policy";
+import { assertWaitlistReady } from "../../modules/waitlist";
 import { readConfig } from "../../platform/config";
 import { createDatabase } from "../../platform/db";
 import { createApp } from "./app";
@@ -14,6 +15,7 @@ if (config.DEPLOYMENT_MODE === "hosted" && policy.selfHostedPlan)
   throw new Error("Hosted deployment cannot select a self-hosted plan");
 await assertActivePolicy(db, policy);
 await assertGrantEligibilityReady(db);
+if (config.WAITLIST_ENABLED === "true") await assertWaitlistReady(db);
 const transport = nativeTransport({
   openai: config.CLOUD_OPENAI_KEY,
   anthropic: config.CLOUD_ANTHROPIC_KEY,

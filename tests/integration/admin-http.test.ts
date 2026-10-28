@@ -264,3 +264,17 @@ test("enabled Access protects login, assets, reports and external health before 
   expect((await local.fetch(new Request(`${origin}/health/ready?extra=1`))).status).toBe(403);
   expect((await local.fetch(new Request(`${origin}/api/overview`))).status).toBe(403);
 });
+
+test("waitlist reporting retains MFA requirements and database-enforced projection", async () => {
+  await expect(
+    (async () => await reports`SELECT confirmation_hash FROM linux_waitlist`)(),
+  ).rejects.toThrow();
+  await expect(
+    (async () => await reports`DELETE FROM admin_report_linux_waitlist`)(),
+  ).rejects.toThrow();
+  const r = await app.fetch(new Request(`${origin}/api/waitlists/linux`));
+  expect(r.status).toBe(401);
+  await f.db.sql`DROP VIEW admin_report_linux_waitlist`;
+  const { reportLinuxWaitlist } = await import("../../src/modules/admin/waitlist");
+  expect((await reportLinuxWaitlist(reports)).available).toBe(false);
+});

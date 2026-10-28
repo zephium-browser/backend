@@ -96,6 +96,8 @@ let operator: Operator | null = null;
 let authGeneration = 0;
 let expiryTimer: ReturnType<typeof setTimeout> | undefined;
 let backupMode = false;
+let waitlistRequest: AbortController | undefined;
+let waitlistExportRequest: AbortController | undefined;
 let overviewRequest: AbortController | undefined;
 let usersRequest: AbortController | undefined;
 let detailRequest: AbortController | undefined;
@@ -189,6 +191,10 @@ function resetAuth(message = ""): void {
   clearTimeout(expiryTimer);
   overviewRequest?.abort();
   usersRequest?.abort();
+  waitlistRequest?.abort();
+  waitlistExportRequest?.abort();
+  element("linux-waitlist").hidden = true;
+  element("waitlist-status").textContent = "";
   clearDetail();
   clearSetup();
   signInForm.reset();
@@ -280,7 +286,7 @@ async function loadSession(fallback: "signin" | "verify" = "signin") {
     authPanel.hidden = true;
     workspace.hidden = false;
     notice();
-    await Promise.all([loadOverview(), loadUsers()]);
+    await Promise.all([loadOverview(), loadUsers(), loadWaitlist()]);
   } catch (error) {
     if (generation !== authGeneration) return;
     if (error instanceof RequestError && error.status === 401) {
@@ -799,6 +805,78 @@ element("refresh").addEventListener("click", () => {
   notice();
   void loadOverview();
   void loadUsers();
+  void loadWaitlist();
   if (selectedUserId) void loadDetail(selectedUserId);
+});
+type WaitlistPage = {
+  available: boolean;
+  confirmed: number;
+  pending: number;
+  items: { email: string; confirmed_at: string }[];
+  next_cursor: string | null;
+};
+async function loadWaitlist(): Promise<void> {
+  waitlistRequest?.abort();
+  const request = new AbortController();
+  waitlistRequest = request;
+  const generation = authGeneration;
+  try {
+    const data = await api<WaitlistPage>("/api/waitlists/linux", {
+      signal: request.signal,
+      report: true,
+    });
+    if (generation !== authGeneration || request.signal.aborted) return;
+    element("linux-waitlist").hidden = !data.available;
+    element("waitlist-status").textContent =
+      `${data.confirmed.toLocaleString()} confirmed · ${data.pending.toLocaleString()} awaiting confirmation`;
+  } catch (error) {
+    if (!isAbort(error) && generation === authGeneration) notice(errorMessage(error));
+  }
+}
+element("waitlist-export").addEventListener("click", async () => {
+  if (!operator?.mfaVerified || waitlistExportRequest) return;
+  const request = new AbortController();
+  waitlistExportRequest = request;
+  const generation = authGeneration;
+  const button = element<HTMLButtonElement>("waitlist-export");
+  button.disabled = true;
+  const csvField = (value: string) =>
+    `"${/^[=+@\-\t\r]/.test(value) ? "'" : ""}${value.replaceAll('"', '""')}"`;
+  const lines = ["email,confirmed_at"];
+  let next: string | null = null;
+  try {
+    do {
+      const data: WaitlistPage = await api<WaitlistPage>(
+        `/api/waitlists/linux${next ? `?cursor=${encodeURIComponent(next)}` : ""}`,
+        { signal: request.signal, report: true },
+      );
+      if (generation !== authGeneration || request.signal.aborted || !data.available) return;
+      for (const item of data.items)
+        lines.push([item.email, item.confirmed_at].map(csvField).join(","));
+      // Keep the browser bounded. Larger lists remain available through the paginated API.
+      if (lines.length > 100001) throw new Error("export_too_large");
+      next = data.next_cursor;
+    } while (next);
+    if (generation !== authGeneration || request.signal.aborted) return;
+    const url = URL.createObjectURL(
+      new Blob([lines.join("\r\n")], { type: "text/csv;charset=utf-8" }),
+    );
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "zephium-linux-waitlist.csv";
+    anchor.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (error) {
+    if (!isAbort(error) && generation === authGeneration)
+      notice(
+        error instanceof Error && error.message === "export_too_large"
+          ? "Use the paginated admin API for exports above 100,000 addresses."
+          : errorMessage(error),
+      );
+  } finally {
+    lines.length = 0;
+    waitlistExportRequest = undefined;
+    button.disabled = false;
+  }
 });
 void loadSession();

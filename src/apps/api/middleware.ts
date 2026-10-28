@@ -3,6 +3,7 @@ import { bodyLimit } from "hono/body-limit";
 import { secureHeaders } from "hono/secure-headers";
 import { audioRoute } from "../../modules/ai";
 import { avatarPath, type IdentityEnvironment } from "../../modules/identity";
+import { waitlistPath } from "../../modules/waitlist";
 import { enforce, privateKey } from "../../platform/abuse";
 import type { Config } from "../../platform/config";
 import type { Database } from "../../platform/db";
@@ -34,18 +35,24 @@ export function installHttpMiddleware(
   });
   // Media routes own timed bounded reads, including requests without Content-Length.
   app.use("*", (c, next) =>
-    c.req.path === audioRoute || (c.req.path === avatarPath && c.req.method === "PUT")
+    c.req.path.startsWith(waitlistPath) ||
+    c.req.path === audioRoute ||
+    (c.req.path === avatarPath && c.req.method === "PUT")
       ? next()
       : limitBody(c, next),
   );
   app.use("*", async (c, next) => {
     c.header("Cache-Control", "no-store");
     const origin = c.req.header("origin");
-    if (origin && !origins.has(origin)) throw new AppError("origin_denied", 403);
+    const allowedOrigins = c.req.path.startsWith(waitlistPath)
+      ? new Set([config.WAITLIST_WEB_ORIGIN])
+      : origins;
+    if (origin && !allowedOrigins.has(origin)) throw new AppError("origin_denied", 403);
     if (origin) {
       c.header("Access-Control-Allow-Origin", origin);
       c.header("Vary", "Origin");
-      c.header("Access-Control-Allow-Credentials", "true");
+      if (!c.req.path.startsWith(waitlistPath))
+        c.header("Access-Control-Allow-Credentials", "true");
       c.header(
         "Access-Control-Expose-Headers",
         "set-auth-token, X-Zephium-Request-Id, X-Zephium-Policy-Revision, X-Zephium-Usage, Retry-After",

@@ -4,10 +4,10 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { bearer, emailOTP } from "better-auth/plugins";
 import { drizzle } from "drizzle-orm/postgres-js";
 import type { TransactionSql } from "postgres";
-import type { EmailApiOptions } from "resend";
-import { consume, privateKey, retryAfterSeconds } from "../../platform/abuse";
+import { consume, privateKey } from "../../platform/abuse";
 import type { Config } from "../../platform/config";
 import type { Database } from "../../platform/db";
+import { deliverEmail } from "../../platform/email";
 import { AppError, operationalEvent } from "../../platform/errors";
 import { otpEmailLogo, renderOTPEmail } from "./emails/otp";
 import * as schema from "./schema";
@@ -48,28 +48,15 @@ export function resendMailer(
   return boundedMailer(
     {
       async sendOTP(email, otp, purpose) {
-        if (!config.RESEND_API_KEY) throw new AppError("email_unavailable", 503);
-        const payload: EmailApiOptions = {
-          from: config.EMAIL_FROM,
-          to: email,
-          ...renderOTPEmail(otp, purpose),
-          attachments: [otpEmailLogo],
-        };
-        // A typed REST adapter gives cancellation without SDK error-body logging.
-        const response = await transport("https://api.resend.com/emails", {
-          method: "POST",
-          redirect: "error",
-          signal: AbortSignal.timeout(8000),
-          headers: {
-            Authorization: `Bearer ${config.RESEND_API_KEY}`,
-            "Content-Type": "application/json",
-            "Idempotency-Key": randomUUID(),
+        await deliverEmail(
+          config,
+          {
+            to: email,
+            ...renderOTPEmail(otp, purpose),
+            attachments: [otpEmailLogo],
           },
-          body: JSON.stringify(payload),
-        });
-        const retry = retryAfterSeconds(response.headers.get("Retry-After"));
-        await response.body?.cancel();
-        if (!response.ok) throw new AppError("email_unavailable", 503, retry ?? 1);
+          transport,
+        );
       },
     },
     config.EMAIL_MAX_IN_FLIGHT,

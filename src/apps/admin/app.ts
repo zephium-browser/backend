@@ -131,11 +131,13 @@ export function createAdminApp(
     if (request.method !== "GET" || !url.pathname.startsWith("/api/"))
       throw new AppError("not_found", 404);
     const allowedQuery =
-      url.pathname === "/api/overview"
-        ? ["days"]
-        : url.pathname === "/api/users"
-          ? ["q", "cursor"]
-          : [];
+      url.pathname === "/api/waitlists/linux"
+        ? ["cursor"]
+        : url.pathname === "/api/overview"
+          ? ["days"]
+          : url.pathname === "/api/users"
+            ? ["q", "cursor"]
+            : [];
     if (
       [...url.searchParams.keys()].some(
         (k) => !allowedQuery.includes(k) || url.searchParams.getAll(k).length !== 1,
@@ -153,7 +155,11 @@ export function createAdminApp(
       let result: unknown;
       let action: "overview" | "users" | "user";
       let target: string | null = null;
-      if (url.pathname === "/api/overview") {
+      if (url.pathname === "/api/waitlists/linux") {
+        action = "users";
+        target = "linux-waitlist";
+        result = await reports.linuxWaitlist(url.searchParams.get("cursor") ?? undefined);
+      } else if (url.pathname === "/api/overview") {
         const days = url.searchParams.get("days") ?? "1";
         if (!["1", "7", "30"].includes(days)) throw new AppError("invalid_request");
         action = "overview";

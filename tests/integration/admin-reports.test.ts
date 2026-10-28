@@ -326,3 +326,24 @@ test("plan labels use the active stored policy, preserve unknown paid products, 
   await fixture.db.sql`DELETE FROM cloud_active_policy WHERE singleton=true`;
   expect((await reports.user(freeUser.id)).user.plan).toBe("unknown");
 });
+
+test("Linux export pages contain only confirmed opt-ins and exclude token material", async () => {
+  await fixture.db
+    .sql`INSERT INTO linux_waitlist(id,email,confirmation_hash,expires_at,confirmed_at,consent_version)
+    SELECT gen_random_uuid(),'linux-'||n||'@example.test',md5(n::text)||md5(n::text),now()+interval '1 day',
+      CASE WHEN n<=205 THEN now()-interval '1 hour' ELSE NULL END,'linux-release-v1' FROM generate_series(1,207) n`;
+  const first = await reports.linuxWaitlist();
+  expect(first.available).toBe(true);
+  expect(first.confirmed).toBe(205);
+  expect(first.pending).toBe(2);
+  expect(first.items).toHaveLength(200);
+  const cursor = first.next_cursor;
+  if (!cursor) throw new Error("Expected another page");
+  const second = await reports.linuxWaitlist(cursor);
+  expect(second.items).toHaveLength(5);
+  expect(second.next_cursor).toBeNull();
+  expect(new Set([...first.items, ...second.items].map((x) => x.id)).size).toBe(205);
+  for (const row of [...first.items, ...second.items])
+    expect(Object.keys(row).sort()).toEqual(["confirmed_at", "email", "id"]);
+  await expect(reports.linuxWaitlist("invalid cursor")).rejects.toThrow();
+});

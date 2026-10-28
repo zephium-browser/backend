@@ -17,3 +17,8 @@ ALTER ROLE zephium_admin_report SET statement_timeout='2s';
 ALTER ROLE zephium_admin_report SET lock_timeout='500ms';
 ALTER ROLE zephium_admin_report CONNECTION LIMIT 4;
 ALTER ROLE zephium_admin_auth CONNECTION LIMIT 4;
+DO $$ BEGIN
+ IF to_regclass('public.admin_report_linux_waitlist') IS NOT NULL THEN
+  GRANT SELECT ON admin_report_linux_waitlist TO zephium_admin_report;
+ END IF;
+END $$;

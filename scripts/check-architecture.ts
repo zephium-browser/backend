@@ -4,6 +4,7 @@ import { relative, resolve } from "node:path";
 /** Explicit acyclic business dependencies, including type dependencies. */
 export const dependencies: Record<string, readonly string[]> = {
   identity: [],
+  waitlist: [],
   admin: [],
   policy: [],
   credits: ["identity", "policy"],

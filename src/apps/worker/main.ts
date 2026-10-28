@@ -9,6 +9,7 @@ import {
 } from "../../modules/billing";
 import { budgetNearLimit, exportUsage, recoverRequests } from "../../modules/credits";
 import { assertActivePolicy, loadPolicy } from "../../modules/policy";
+import { cleanupWaitlist } from "../../modules/waitlist";
 import { readWorkerConfig } from "../../platform/config";
 import { createDatabase } from "../../platform/db";
 import { operationalEvent } from "../../platform/errors";
@@ -86,6 +87,7 @@ try {
       }
       if (Date.now() - lastCleanup > 3600_000) {
         await cleanup(db);
+        await cleanupWaitlist(db);
         lastCleanup = Date.now();
       }
       if (Date.now() - lastRecovery > 5000) {
