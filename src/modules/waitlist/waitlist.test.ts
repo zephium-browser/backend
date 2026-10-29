@@ -5,7 +5,7 @@ import { createApp } from "../../apps/api/app";
 import { readConfig } from "../../platform/config";
 import type { BillingProvider } from "../billing";
 import { createAuth, type Mailer } from "../identity";
-import { cleanupWaitlist, waitlistUnsubscribeUrl } from "./service";
+import { cleanupWaitlist, waitlistUnsubscribeHeaders, waitlistUnsubscribeUrl } from "./service";
 
 let f: Awaited<ReturnType<typeof testDatabase>>;
 let app: ReturnType<typeof createApp>;
@@ -47,12 +47,27 @@ function build(overrides: Record<string, string> = {}) {
     mailer,
   );
 }
-function post(path: string, body: unknown, headers: Record<string, string> = {}) {
-  return app.request(`http://localhost:3000/v1/waitlists/linux${path}`, {
+async function post(path: string, body: unknown, headers: Record<string, string> = {}) {
+  const response = await app.request(`http://localhost:3000/v1/waitlists/linux${path}`, {
     method: "POST",
     headers: { origin, "content-type": "application/json", ...headers },
     body: JSON.stringify(body),
   });
+  if ((headers.origin ?? origin) === origin) assertCors(response);
+  else expect(response.headers.get("Access-Control-Allow-Origin")).toBeNull();
+  return response;
+}
+function assertCors(response: Response) {
+  expect(response.headers.get("Access-Control-Allow-Origin")).toBe(origin);
+  expect(
+    response.headers
+      .get("Vary")
+      ?.split(",")
+      .map((v) => v.trim()),
+  ).toContain("Origin");
+  expect(response.headers.get("Access-Control-Allow-Credentials")).toBeNull();
+  expect(response.headers.get("Access-Control-Expose-Headers")).toBe("Retry-After");
+  expect(response.headers.get("Cache-Control")).toBe("no-store");
 }
 async function legacy(email: string, expired = false) {
   const token = randomBytes(32).toString("base64url");
@@ -158,7 +173,10 @@ test("signed unsubscribe is idempotent and old links cannot delete a later membe
   await post("", { email: "person@example.com" });
   const [row] = await f.db.sql`SELECT id FROM linux_waitlist`;
   const url = waitlistUnsubscribeUrl(config(), row?.id);
+  expect(waitlistUnsubscribeHeaders(config(), row?.id)).toEqual({ "List-Unsubscribe": `<${url}>` });
   expect(new URL(url).search).toBe("");
+  expect(new URL(url).pathname).toBe("/linux/unsubscribe");
+  expect([...new URLSearchParams(new URL(url).hash.slice(1)).keys()]).toEqual(["token"]);
   expect(url).not.toContain("person");
   const proof = token(url);
   if (!proof) throw new Error("Missing proof");
@@ -187,7 +205,11 @@ test("invalid origins, credentials, payloads and oversize bodies are rejected", 
   expect((await post("", { email: "x".repeat(3000) })).status).toBe(413);
   const cors = await app.request("http://localhost:3000/v1/waitlists/linux", {
     method: "OPTIONS",
-    headers: { origin },
+    headers: {
+      origin,
+      "Access-Control-Request-Method": "POST",
+      "Access-Control-Request-Headers": "content-type",
+    },
   });
   expect(cors.status).toBe(204);
   expect(cors.headers.get("Access-Control-Allow-Origin")).toBe(origin);
@@ -294,4 +316,68 @@ test("upgrade preserves verified subscriptions and never enrolls legacy pending 
     expect(row).toEqual({ total: 3, subscribed: 1, confirmed: 1 });
     await tx`DROP SCHEMA waitlist_upgrade_test CASCADE`;
   });
+});
+
+test("CORS covers media errors, missing routes, preflight rejection and unavailable database", async () => {
+  for (const path of ["", "/unsubscribe"]) {
+    const r = await app.request(`http://localhost:3000/v1/waitlists/linux${path}`, {
+      method: "POST",
+      headers: { Origin: origin, "Content-Type": "text/plain" },
+      body: "{}",
+    });
+    expect(r.status).toBe(415);
+    assertCors(r);
+    const preflight = await app.request(`http://localhost:3000/v1/waitlists/linux${path}`, {
+      method: "OPTIONS",
+      headers: {
+        Origin: origin,
+        "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Headers": "content-type",
+      },
+    });
+    expect(preflight.status).toBe(204);
+    assertCors(preflight);
+    expect(preflight.headers.get("Access-Control-Allow-Methods")).toBe("POST, OPTIONS");
+    expect(preflight.headers.get("Access-Control-Allow-Headers")).toBe("Content-Type");
+    expect(preflight.headers.get("Access-Control-Max-Age")).toBe("600");
+  }
+  for (const headers of [
+    {
+      Origin: origin,
+      "Access-Control-Request-Method": "PUT",
+      "Access-Control-Request-Headers": "",
+    },
+    {
+      Origin: origin,
+      "Access-Control-Request-Method": "POST",
+      "Access-Control-Request-Headers": "authorization",
+    },
+  ]) {
+    const r = await app.request("http://localhost:3000/v1/waitlists/linux", {
+      method: "OPTIONS",
+      headers,
+    });
+    expect(r.status).toBe(403);
+    assertCors(r);
+  }
+  const unknown = await app.request("http://localhost:3000/v1/waitlists/linux", {
+    headers: { Origin: origin },
+  });
+  expect(unknown.status).toBe(404);
+  assertCors(unknown);
+  const badDb = spyOn(f.db, "sql").mockImplementation(
+    new Proxy(f.db.sql, {
+      apply() {
+        throw new Error("do not expose database details");
+      },
+    }),
+  );
+  try {
+    const r = await post("", { email: "outage@example.com" });
+    expect(r.status).toBe(503);
+    expect(r.headers.get("Retry-After")).toBe("1");
+    expect(await r.text()).not.toContain("database details");
+  } finally {
+    badDb.mockRestore();
+  }
 });

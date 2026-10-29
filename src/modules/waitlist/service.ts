@@ -11,10 +11,13 @@ export function waitlistUnsubscribeUrl(config: Config, id: string): string {
   z.uuid().parse(id);
   const url = new URL("/linux/unsubscribe", config.WAITLIST_WEB_ORIGIN);
   url.hash = new URLSearchParams({
-    action: "unsubscribe",
     token: `${id}.${privateKey(config.AUTH_SECRET, "linux-waitlist-unsubscribe:v1", id)}`,
   }).toString();
   return url.href;
+}
+/** Human-click unsubscribe header; do not advertise RFC 8058 POST without its separate handler. */
+export function waitlistUnsubscribeHeaders(config: Config, id: string): Record<string, string> {
+  return { "List-Unsubscribe": `<${waitlistUnsubscribeUrl(config, id)}>` };
 }
 export function createWaitlistService(config: Config, db: Database) {
   const unsubscribeSignature = (id: string) =>

@@ -32,7 +32,7 @@ export function createWaitlistRoutes(
   for (const action of ["join", "confirm", "unsubscribe"] as const) {
     app.post(action === "join" ? waitlistPath : `${waitlistPath}/${action}`, async (c) => {
       if (!/^application\/json(?:\s*;|$)/i.test(c.req.header("content-type") ?? ""))
-        throw new AppError("invalid_request");
+        throw new AppError("unsupported_media_type", 415);
       const bytes = await readIncomingBody(c.req.raw, 2048, 5000);
       let body: unknown;
       try {

@@ -1885,6 +1885,9 @@
           },
           "503": {
             "description": "Temporarily unavailable; honor Retry-After if present"
+          },
+          "415": {
+            "description": "Unsupported media type: use application/json"
           }
         }
       }
@@ -1953,6 +1956,9 @@
           },
           "503": {
             "description": "Temporarily unavailable; honor Retry-After if present"
+          },
+          "415": {
+            "description": "Unsupported media type: use application/json"
           }
         }
       }
@@ -2021,6 +2027,9 @@
           },
           "503": {
             "description": "Temporarily unavailable; honor Retry-After if present"
+          },
+          "415": {
+            "description": "Unsupported media type: use application/json"
           }
         }
       }

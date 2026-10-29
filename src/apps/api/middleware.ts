@@ -3,19 +3,20 @@ import { bodyLimit } from "hono/body-limit";
 import { secureHeaders } from "hono/secure-headers";
 import { audioRoute } from "../../modules/ai";
 import { avatarPath, type IdentityEnvironment } from "../../modules/identity";
-import { waitlistPath } from "../../modules/waitlist";
 import { enforce, privateKey } from "../../platform/abuse";
 import type { Config } from "../../platform/config";
 import type { Database } from "../../platform/db";
 import { AppError, errorResponse } from "../../platform/errors";
 import { markIncomingStart } from "../../platform/incoming-body";
 import { canonicalIp } from "../../platform/ip-bucket";
+import { installWaitlistCors, isWaitlistPath } from "./waitlist-cors";
 export function installHttpMiddleware(
   app: Hono<IdentityEnvironment>,
   config: Config,
   db: Database,
   clientIp: (request: Request) => string,
 ) {
+  installWaitlistCors(app, config);
   const origins = new Set(config.TRUSTED_ORIGINS.split(","));
   let activeHTTP = 0;
   app.use("*", async (_c, next) => {
@@ -35,24 +36,22 @@ export function installHttpMiddleware(
   });
   // Media routes own timed bounded reads, including requests without Content-Length.
   app.use("*", (c, next) =>
-    c.req.path.startsWith(waitlistPath) ||
+    isWaitlistPath(c.req.path) ||
     c.req.path === audioRoute ||
     (c.req.path === avatarPath && c.req.method === "PUT")
       ? next()
       : limitBody(c, next),
   );
   app.use("*", async (c, next) => {
+    if (isWaitlistPath(c.req.path)) return next();
     c.header("Cache-Control", "no-store");
     const origin = c.req.header("origin");
-    const allowedOrigins = c.req.path.startsWith(waitlistPath)
-      ? new Set([config.WAITLIST_WEB_ORIGIN])
-      : origins;
+    const allowedOrigins = origins;
     if (origin && !allowedOrigins.has(origin)) throw new AppError("origin_denied", 403);
     if (origin) {
       c.header("Access-Control-Allow-Origin", origin);
       c.header("Vary", "Origin");
-      if (!c.req.path.startsWith(waitlistPath))
-        c.header("Access-Control-Allow-Credentials", "true");
+      c.header("Access-Control-Allow-Credentials", "true");
       c.header(
         "Access-Control-Expose-Headers",
         "set-auth-token, X-Zephium-Request-Id, X-Zephium-Policy-Revision, X-Zephium-Usage, Retry-After",
