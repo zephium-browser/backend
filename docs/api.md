@@ -112,3 +112,7 @@ New HTTP errors: 400 `invalid_plan_change`; 404 `plan_change_not_found`; 409 `su
 A policy may explicitly set `creditCurrency:"USD"`; then 1,000,000 accounting units represent $1 of usage credit. Omission keeps arbitrary-credit/self-hosted behavior and returns null. Existing policies keep their previous digest when this optional field is omitted. Once declared, the currency cannot be removed through an ordinary policy update. Introducing it over outstanding unlabelled purchased balances requires a reviewed migration; the registrar refuses to silently relabel them. Prices/bonuses and model tariffs remain separate policy/product decisions.
 
 `GET /v1/usage/requests` includes `credit_units:"10000"` at the history-envelope level; individual receipts include it alongside `charged`/`reserved`. Settled SSE trailers include it with `charged`; pending/error trailers have no final amount. Account export inherits the field through its usage object. `PUT /v1/usage/limits` still accepts raw accounting units. This display metadata does not change Polar's `price.amount_minor`, provider token counts or historical charges. Use `purchased_balance` for an explicitly denominated USD balance; null still means the legacy/self-hosted policy has not assigned that currency.
+
+## Linux release waitlist
+
+See [the website integration contract](linux-waitlist-integration.md). No account or confirmation email is created.

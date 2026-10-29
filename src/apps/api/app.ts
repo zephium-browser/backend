@@ -1,4 +1,5 @@
 import { authenticate } from "../../modules/identity";
+import { createWaitlistRoutes } from "../../modules/waitlist";
 import { createClientAddressResolver } from "../../platform/client-address";
 import { installHttpMiddleware } from "./middleware";
 import { installPublicRoutes } from "./public-routes";
@@ -53,6 +54,7 @@ export function createApp(
     resolveClientAddress(peerAddress(request), request.headers);
   installHttpMiddleware(app, config, db, clientIp);
   installPublicRoutes(app, config, db, cloud);
+  app.route("/", createWaitlistRoutes(config, db, clientIp));
   app.route("/api/auth", createIdentityRoutes(config, db, auth, clientIp));
   app.route("/", createBillingWebhookRoutes(config, db));
   app.use("*", async (c, next) => {

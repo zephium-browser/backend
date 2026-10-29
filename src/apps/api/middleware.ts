@@ -8,12 +8,14 @@ import type { Config } from "../../platform/config";
 import type { Database } from "../../platform/db";
 import { AppError, errorResponse } from "../../platform/errors";
 import { markIncomingStart } from "../../platform/incoming-body";
+import { installWaitlistCors, isWaitlistPath } from "./waitlist-cors";
 export function installHttpMiddleware(
   app: Hono<IdentityEnvironment>,
   config: Config,
   db: Database,
   clientIp: (request: Request) => string,
 ) {
+  installWaitlistCors(app, config);
   const origins = new Set(config.TRUSTED_ORIGINS.split(","));
   let activeHTTP = 0;
   app.use("*", async (_c, next) => {
@@ -33,11 +35,14 @@ export function installHttpMiddleware(
   });
   // Media routes own timed bounded reads, including requests without Content-Length.
   app.use("*", (c, next) =>
-    c.req.path === audioRoute || (c.req.path === avatarPath && c.req.method === "PUT")
+    isWaitlistPath(c.req.path) ||
+    c.req.path === audioRoute ||
+    (c.req.path === avatarPath && c.req.method === "PUT")
       ? next()
       : limitBody(c, next),
   );
   app.use("*", async (c, next) => {
+    if (isWaitlistPath(c.req.path)) return next();
     c.header("Cache-Control", "no-store");
     const origin = c.req.header("origin");
     if (origin && !origins.has(origin)) throw new AppError("origin_denied", 403);

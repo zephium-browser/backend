@@ -107,6 +107,10 @@ services:
       EMAIL_FROM: ${EMAIL_FROM:?Set your verified sender}
       SOURCE_URL: ${SOURCE_URL:?Set the public source URL for this release or fork}
       CLIENT_MIN_VERSION: ${CLIENT_MIN_VERSION:-1.0.0-beta.2}
+      WAITLIST_ENABLED: ${WAITLIST_ENABLED:-false}
+      WAITLIST_WEB_ORIGIN: ${WAITLIST_WEB_ORIGIN:-https://zephium.app}
+      WAITLIST_REQUESTS_PER_MINUTE: ${WAITLIST_REQUESTS_PER_MINUTE:-30}
+      WAITLIST_REQUESTS_PER_DAY: ${WAITLIST_REQUESTS_PER_DAY:-1000}
       SIGNUP_OPEN: ${SIGNUP_OPEN:-false}
       SIGNUP_EMAIL_ALLOWLIST: ${SIGNUP_EMAIL_ALLOWLIST:?Set exact approved staging email addresses}
       EMAIL_MAX_IN_FLIGHT: "4"

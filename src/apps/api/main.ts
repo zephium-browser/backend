@@ -2,6 +2,7 @@ import { createCloudService, nativeTransport } from "../../modules/ai";
 import { polarProvider } from "../../modules/billing";
 import { createAuth, resendMailer } from "../../modules/identity";
 import { assertActivePolicy, loadPolicy } from "../../modules/policy";
+import { assertWaitlistReady } from "../../modules/waitlist";
 import { readConfig } from "../../platform/config";
 import { createDatabase } from "../../platform/db";
 import { createApp } from "./app";
@@ -9,6 +10,7 @@ import { createApiServer } from "./server";
 
 const config = readConfig();
 const db = createDatabase(config);
+if (config.WAITLIST_ENABLED === "true") await assertWaitlistReady(db);
 const policy = await loadPolicy(config.CLOUD_CONFIG_PATH);
 if (config.DEPLOYMENT_MODE === "hosted" && policy.selfHostedPlan)
   throw new Error("Hosted deployment cannot select a self-hosted plan");

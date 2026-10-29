@@ -1814,6 +1814,225 @@
           }
         }
       }
+    },
+    "/v1/waitlists/linux": {
+      "post": {
+        "summary": "Join the Linux release notification list without email confirmation",
+        "description": "Public, cookie-free route; requires exact WAITLIST_WEB_ORIGIN Origin and WAITLIST_ENABLED=true. Do not send authentication. JSON body limit 2048 bytes. See docs/linux-waitlist-integration.md. Records a single opt-in immediately; sends no email and does not verify mailbox ownership. The optional website field is a honeypot and must be empty. Generic 202 for duplicates and suppressed requests.",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "email"
+                ],
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "format": "email",
+                    "maxLength": 254
+                  },
+                  "website": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "description": "Honeypot: leave empty or omit."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "accepted"
+                  ],
+                  "properties": {
+                    "accepted": {
+                      "const": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or invalid/expired token"
+          },
+          "403": {
+            "description": "Origin denied"
+          },
+          "404": {
+            "description": "Feature disabled or route not found"
+          },
+          "408": {
+            "description": "Request timed out"
+          },
+          "413": {
+            "description": "Body too large"
+          },
+          "429": {
+            "description": "Rate limited; honor Retry-After"
+          },
+          "503": {
+            "description": "Temporarily unavailable; honor Retry-After if present"
+          },
+          "415": {
+            "description": "Unsupported media type: use application/json"
+          }
+        }
+      }
+    },
+    "/v1/waitlists/linux/confirm": {
+      "post": {
+        "summary": "Redeem a legacy confirmation link (not used by new signups)",
+        "description": "Public, cookie-free route; requires exact WAITLIST_WEB_ORIGIN Origin and WAITLIST_ENABLED=true. Do not send authentication. JSON body limit 2048 bytes. See docs/linux-waitlist-integration.md.",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "token"
+                ],
+                "properties": {
+                  "token": {
+                    "type": "string",
+                    "maxLength": 43
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "confirmed"
+                  ],
+                  "properties": {
+                    "confirmed": {
+                      "const": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or invalid/expired token"
+          },
+          "403": {
+            "description": "Origin denied"
+          },
+          "404": {
+            "description": "Feature disabled or route not found"
+          },
+          "408": {
+            "description": "Request timed out"
+          },
+          "413": {
+            "description": "Body too large"
+          },
+          "429": {
+            "description": "Rate limited; honor Retry-After"
+          },
+          "503": {
+            "description": "Temporarily unavailable; honor Retry-After if present"
+          },
+          "415": {
+            "description": "Unsupported media type: use application/json"
+          }
+        }
+      }
+    },
+    "/v1/waitlists/linux/unsubscribe": {
+      "post": {
+        "summary": "Remove the Linux waitlist membership",
+        "description": "Public, cookie-free route; requires exact WAITLIST_WEB_ORIGIN Origin and WAITLIST_ENABLED=true. Do not send authentication. JSON body limit 2048 bytes. See docs/linux-waitlist-integration.md.",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "token"
+                ],
+                "properties": {
+                  "token": {
+                    "type": "string",
+                    "maxLength": 101
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "unsubscribed"
+                  ],
+                  "properties": {
+                    "unsubscribed": {
+                      "const": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or invalid/expired token"
+          },
+          "403": {
+            "description": "Origin denied"
+          },
+          "404": {
+            "description": "Feature disabled or route not found"
+          },
+          "408": {
+            "description": "Request timed out"
+          },
+          "413": {
+            "description": "Body too large"
+          },
+          "429": {
+            "description": "Rate limited; honor Retry-After"
+          },
+          "503": {
+            "description": "Temporarily unavailable; honor Retry-After if present"
+          },
+          "415": {
+            "description": "Unsupported media type: use application/json"
+          }
+        }
+      }
     }
   },
   "components": {

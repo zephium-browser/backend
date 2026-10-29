@@ -2,6 +2,10 @@ import { z } from "zod";
 
 const optionalSecret = z.string().min(1).optional();
 const schema = z.object({
+  WAITLIST_ENABLED: z.enum(["true", "false"]).default("false"),
+  WAITLIST_WEB_ORIGIN: z.url().default("https://zephium.app"),
+  WAITLIST_REQUESTS_PER_MINUTE: z.coerce.number().int().min(1).max(300).default(30),
+  WAITLIST_REQUESTS_PER_DAY: z.coerce.number().int().min(1).max(100000).default(1000),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   DEPLOYMENT_MODE: z.enum(["hosted", "self_hosted"]).default("hosted"),
   SIGNUP_OPEN: z.enum(["true", "false"]).default("true"),
@@ -107,6 +111,19 @@ export function readConfig(env: Record<string, string | undefined> = process.env
   if (c.DEPLOYMENT_MODE === "self_hosted" && c.BILLING_ENABLED === "true")
     throw new Error("Self-hosted deployment does not use Zephium billing");
   if (c.AUTH_SECRET === c.ABUSE_SECRET) throw new Error("Secrets must be independent");
+  const waitlistOrigin = new URL(c.WAITLIST_WEB_ORIGIN);
+  if (
+    waitlistOrigin.origin !== c.WAITLIST_WEB_ORIGIN ||
+    waitlistOrigin.username ||
+    waitlistOrigin.password ||
+    (waitlistOrigin.protocol !== "https:" &&
+      !(
+        c.NODE_ENV !== "production" &&
+        waitlistOrigin.protocol === "http:" &&
+        ["localhost", "127.0.0.1"].includes(waitlistOrigin.hostname)
+      ))
+  )
+    throw new Error("Waitlist requires an exact HTTPS website origin");
   const origins = c.TRUSTED_ORIGINS.split(",");
   for (const origin of [c.API_ORIGIN, ...origins]) {
     if (new URL(origin).origin !== origin || origin.includes("*"))
