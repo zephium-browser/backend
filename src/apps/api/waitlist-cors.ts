@@ -31,24 +31,40 @@ export function installWaitlistCors(app: Hono<IdentityEnvironment>, config: Conf
     } else {
       await next();
     }
-    // Error handlers may replace c.res, so headers must be applied after next().
-    c.header("Cache-Control", "no-store");
-    const vary =
-      c.res.headers
-        .get("Vary")
-        ?.split(",")
-        .map((v) => v.trim())
-        .filter(Boolean) ?? [];
-    if (!vary.some((v) => v === "*" || v.toLowerCase() === "origin")) vary.push("Origin");
-    c.header("Vary", vary.join(", "));
-    c.header("Access-Control-Allow-Credentials", undefined);
-    if (allowed) {
-      c.header("Access-Control-Allow-Origin", config.WAITLIST_WEB_ORIGIN);
-      c.header("Access-Control-Expose-Headers", "Retry-After");
-    } else {
-      c.header("Access-Control-Allow-Origin", undefined);
-    }
-    if (c.res.status === 503 && !c.res.headers.has("Retry-After")) c.header("Retry-After", "1");
+    c.res = decorateWaitlistResponse(c.req.raw, c.res, config.WAITLIST_WEB_ORIGIN);
     return c.res;
+  });
+}
+
+/** Also used by the HTTP server for errors returned before Hono receives a request. */
+export function decorateWaitlistResponse(
+  request: Request,
+  response: Response,
+  origin?: string,
+): Response {
+  if (!origin || !isWaitlistPath(new URL(request.url).pathname)) return response;
+  const headers = new Headers(response.headers);
+  headers.set("Cache-Control", "no-store");
+  const vary =
+    headers
+      .get("Vary")
+      ?.split(",")
+      .map((v) => v.trim())
+      .filter(Boolean) ?? [];
+  if (!vary.some((v) => v === "*" || v.toLowerCase() === "origin")) vary.push("Origin");
+  headers.set("Vary", vary.join(", "));
+  headers.delete("Access-Control-Allow-Credentials");
+  if (request.headers.get("origin") === origin) {
+    headers.set("Access-Control-Allow-Origin", origin);
+    headers.set("Access-Control-Expose-Headers", "Retry-After");
+  } else {
+    headers.delete("Access-Control-Allow-Origin");
+    headers.delete("Access-Control-Expose-Headers");
+  }
+  if (response.status === 503 && !headers.has("Retry-After")) headers.set("Retry-After", "1");
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
   });
 }
