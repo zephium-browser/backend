@@ -327,14 +327,16 @@ test("plan labels use the active stored policy, preserve unknown paid products, 
   expect((await reports.user(freeUser.id)).user.plan).toBe("unknown");
 });
 
-test("Linux export pages contain only confirmed opt-ins and exclude token material", async () => {
+test("Linux export pages contain only subscriptions and exclude token material", async () => {
   await fixture.db
-    .sql`INSERT INTO linux_waitlist(id,email,confirmation_hash,expires_at,confirmed_at,consent_version)
+    .sql`INSERT INTO linux_waitlist(id,email,confirmation_hash,expires_at,confirmed_at,subscribed_at,consent_version)
     SELECT gen_random_uuid(),'linux-'||n||'@example.test',md5(n::text)||md5(n::text),now()+interval '1 day',
-      CASE WHEN n<=205 THEN now()-interval '1 hour' ELSE NULL END,'linux-release-v1' FROM generate_series(1,207) n`;
+      CASE WHEN n<=203 THEN now()-interval '1 hour' ELSE NULL END,
+      CASE WHEN n IN (204,205) THEN now()-interval '1 hour' ELSE NULL END,'linux-release-v1' FROM generate_series(1,207) n`;
   const first = await reports.linuxWaitlist();
   expect(first.available).toBe(true);
-  expect(first.confirmed).toBe(205);
+  expect(first.subscribed).toBe(205);
+  expect(first.confirmed).toBe(203);
   expect(first.pending).toBe(2);
   expect(first.items).toHaveLength(200);
   const cursor = first.next_cursor;
@@ -344,6 +346,6 @@ test("Linux export pages contain only confirmed opt-ins and exclude token materi
   expect(second.next_cursor).toBeNull();
   expect(new Set([...first.items, ...second.items].map((x) => x.id)).size).toBe(205);
   for (const row of [...first.items, ...second.items])
-    expect(Object.keys(row).sort()).toEqual(["confirmed_at", "email", "id"]);
+    expect(Object.keys(row).sort()).toEqual(["confirmed_at", "email", "id", "subscribed_at"]);
   await expect(reports.linuxWaitlist("invalid cursor")).rejects.toThrow();
 });

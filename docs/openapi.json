@@ -1817,8 +1817,8 @@
     },
     "/v1/waitlists/linux": {
       "post": {
-        "summary": "Request confirmation for the Linux release notification",
-        "description": "Public, cookie-free route; requires exact WAITLIST_WEB_ORIGIN Origin and WAITLIST_ENABLED=true. Do not send authentication. JSON body limit 2048 bytes. See docs/linux-waitlist-integration.md.",
+        "summary": "Join the Linux release notification list without email confirmation",
+        "description": "Public, cookie-free route; requires exact WAITLIST_WEB_ORIGIN Origin and WAITLIST_ENABLED=true. Do not send authentication. JSON body limit 2048 bytes. See docs/linux-waitlist-integration.md. Records a single opt-in immediately; sends no email and does not verify mailbox ownership. The optional website field is a honeypot and must be empty. Generic 202 for duplicates and suppressed requests.",
         "security": [],
         "requestBody": {
           "required": true,
@@ -1835,6 +1835,11 @@
                     "type": "string",
                     "format": "email",
                     "maxLength": 254
+                  },
+                  "website": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "description": "Honeypot: leave empty or omit."
                   }
                 }
               }
@@ -1886,7 +1891,7 @@
     },
     "/v1/waitlists/linux/confirm": {
       "post": {
-        "summary": "Confirm Linux opt-in after explicit user action",
+        "summary": "Redeem a legacy confirmation link (not used by new signups)",
         "description": "Public, cookie-free route; requires exact WAITLIST_WEB_ORIGIN Origin and WAITLIST_ENABLED=true. Do not send authentication. JSON body limit 2048 bytes. See docs/linux-waitlist-integration.md.",
         "security": [],
         "requestBody": {

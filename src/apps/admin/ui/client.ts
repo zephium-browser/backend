@@ -810,9 +810,10 @@ element("refresh").addEventListener("click", () => {
 });
 type WaitlistPage = {
   available: boolean;
+  subscribed: number;
   confirmed: number;
   pending: number;
-  items: { email: string; confirmed_at: string }[];
+  items: { email: string; subscribed_at: string; confirmed_at: string | null }[];
   next_cursor: string | null;
 };
 async function loadWaitlist(): Promise<void> {
@@ -828,7 +829,7 @@ async function loadWaitlist(): Promise<void> {
     if (generation !== authGeneration || request.signal.aborted) return;
     element("linux-waitlist").hidden = !data.available;
     element("waitlist-status").textContent =
-      `${data.confirmed.toLocaleString()} confirmed · ${data.pending.toLocaleString()} awaiting confirmation`;
+      `${data.subscribed.toLocaleString()} subscribed · ${data.pending.toLocaleString()} legacy unconfirmed (excluded)`;
   } catch (error) {
     if (!isAbort(error) && generation === authGeneration) notice(errorMessage(error));
   }
@@ -842,7 +843,7 @@ element("waitlist-export").addEventListener("click", async () => {
   button.disabled = true;
   const csvField = (value: string) =>
     `"${/^[=+@\-\t\r]/.test(value) ? "'" : ""}${value.replaceAll('"', '""')}"`;
-  const lines = ["email,confirmed_at"];
+  const lines = ["email,subscribed_at"];
   let next: string | null = null;
   try {
     do {
@@ -852,7 +853,7 @@ element("waitlist-export").addEventListener("click", async () => {
       );
       if (generation !== authGeneration || request.signal.aborted || !data.available) return;
       for (const item of data.items)
-        lines.push([item.email, item.confirmed_at].map(csvField).join(","));
+        lines.push([item.email, item.subscribed_at].map(csvField).join(","));
       // Keep the browser bounded. Larger lists remain available through the paginated API.
       if (lines.length > 100001) throw new Error("export_too_large");
       next = data.next_cursor;

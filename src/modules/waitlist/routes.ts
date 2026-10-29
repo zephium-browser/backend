@@ -3,17 +3,16 @@ import type { Config } from "../../platform/config";
 import type { Database } from "../../platform/db";
 import { AppError } from "../../platform/errors";
 import { readIncomingBody } from "../../platform/incoming-body";
-import { createWaitlistService, type WaitlistMailer } from "./service";
+import { createWaitlistService } from "./service";
 
 export const waitlistPath = "/v1/waitlists/linux";
 export function createWaitlistRoutes(
   config: Config,
   db: Database,
-  send: WaitlistMailer,
   clientIp: (r: Request) => string,
 ) {
   const app = new Hono();
-  const service = createWaitlistService(config, db, send);
+  const service = createWaitlistService(config, db);
   let active = 0;
   app.use(`${waitlistPath}*`, async (c, next) => {
     if (config.WAITLIST_ENABLED !== "true") throw new AppError("not_found", 404);

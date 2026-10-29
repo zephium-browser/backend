@@ -6,8 +6,8 @@ const schema = z.object({
   DEPLOYMENT_MODE: z.enum(["hosted", "self_hosted"]).default("hosted"),
   WAITLIST_ENABLED: z.enum(["true", "false"]).default("false"),
   WAITLIST_WEB_ORIGIN: z.url().default("https://zephium.app"),
-  WAITLIST_EMAILS_PER_MINUTE: z.coerce.number().int().min(1).max(300).default(30),
-  WAITLIST_EMAILS_PER_DAY: z.coerce.number().int().min(1).max(100000).default(1000),
+  WAITLIST_REQUESTS_PER_MINUTE: z.coerce.number().int().min(1).max(300).default(30),
+  WAITLIST_REQUESTS_PER_DAY: z.coerce.number().int().min(1).max(100000).default(1000),
   SIGNUP_OPEN: z.enum(["true", "false"]).default("true"),
   // Empty permits all addresses; staging can restrict identity to exact addresses.
   SIGNUP_EMAIL_ALLOWLIST: z
