@@ -41,6 +41,8 @@ const server = createApiServer(
       mailer,
     ),
   config.PORT,
+  undefined,
+  config.WAITLIST_WEB_ORIGIN,
 );
 async function stop() {
   let timer: ReturnType<typeof setTimeout> | undefined;

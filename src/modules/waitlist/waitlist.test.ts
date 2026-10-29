@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { testDatabase } from "../../../tests/support/database";
 import { createApp } from "../../apps/api/app";
+import { createApiServer } from "../../apps/api/server";
 import { readConfig } from "../../platform/config";
 import type { BillingProvider } from "../billing";
 import { createAuth, type Mailer } from "../identity";
@@ -381,3 +382,95 @@ test("CORS covers media errors, missing routes, preflight rejection and unavaila
     badDb.mockRestore();
   }
 });
+
+test("real HTTP boundary keeps CORS on oversized bodies, socket admission and unexpected errors", async () => {
+  const server = createApiServer(() => app, 0, "127.0.0.1", origin);
+  const base = `http://127.0.0.1:${server.port}/v1/waitlists/linux`;
+  const controller = new AbortController();
+  const pending: Promise<unknown>[] = [];
+  try {
+    const large = await fetch(base, {
+      method: "POST",
+      headers: { Origin: origin, "Content-Type": "application/json" },
+      body: "x".repeat(4096),
+    });
+    expect(large.status).toBe(413);
+    assertCors(large);
+    await large.body?.cancel();
+    for (let i = 0; i < 16; i++)
+      pending.push(
+        fetch(base, {
+          method: "POST",
+          headers: { Origin: origin, "Content-Type": "application/json" },
+          body: new ReadableStream<Uint8Array>({
+            start(c) {
+              c.enqueue(new TextEncoder().encode("{"));
+            },
+          }),
+          signal: controller.signal,
+        }).catch(() => {}),
+      );
+    for (let i = 0; i < 100 && server.pendingRequests < 16; i++) await Bun.sleep(5);
+    expect(server.pendingRequests).toBe(16);
+    const busy = await fetch(base, {
+      method: "POST",
+      headers: { Origin: origin, "Content-Type": "application/json" },
+      body: "{}",
+    });
+    expect(busy.status).toBe(503);
+    assertCors(busy);
+    expect(busy.headers.get("Retry-After")).toBe("1");
+    await busy.body?.cancel();
+  } finally {
+    controller.abort();
+    await Promise.allSettled(pending);
+    await server.stop(true);
+  }
+  const broken = createApiServer(
+    () => ({
+      fetch() {
+        throw new Error("internal details");
+      },
+    }),
+    0,
+    "127.0.0.1",
+    origin,
+  );
+  try {
+    const r = await fetch(`http://127.0.0.1:${broken.port}/v1/waitlists/linux/unsubscribe`, {
+      method: "POST",
+      headers: { Origin: origin, "Content-Type": "application/json" },
+      body: "{}",
+    });
+    expect(r.status).toBe(503);
+    assertCors(r);
+    expect(await r.text()).not.toContain("internal details");
+  } finally {
+    await broken.stop(true);
+  }
+});
+
+test("real HTTP slow uploads use the waitlist deadline and return readable CORS errors", async () => {
+  const server = createApiServer(() => app, 0, "127.0.0.1", origin);
+  const controller = new AbortController();
+  const started = performance.now();
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.port}/v1/waitlists/linux`, {
+      method: "POST",
+      headers: { Origin: origin, "Content-Type": "application/json" },
+      body: new ReadableStream<Uint8Array>({
+        start(c) {
+          c.enqueue(new TextEncoder().encode("{"));
+        },
+      }),
+      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(8000)]),
+    });
+    expect(response.status).toBe(408);
+    assertCors(response);
+    expect(performance.now() - started).toBeLessThan(7500);
+    await response.body?.cancel();
+  } finally {
+    controller.abort();
+    await server.stop(true);
+  }
+}, 10000);
