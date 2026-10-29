@@ -14,10 +14,11 @@ test("staging deployment pulls first and stops on failed migration or backfill",
     );
     const script = new URL("../../deploy/staging-upgrade.sh", import.meta.url).pathname;
     for (const [failure, count] of [
-      ["never-match", 5],
+      ["never-match", 6],
       ["pull api", 1],
-      ["--no-deps migrate", 3],
-      ["backfill-grant-eligibility", 4],
+      ["--wait-timeout 90 postgres", 3],
+      ["--no-deps migrate", 4],
+      ["backfill-grant-eligibility", 5],
     ] as const) {
       await writeFile(log, "");
       const child = Bun.spawn(
@@ -43,7 +44,8 @@ test("staging deployment pulls first and stops on failed migration or backfill",
       }
       expect(calls[0]).toEndWith("pull api worker migrate");
       if (count > 1) expect(calls[1]).toEndWith("stop --timeout 45 api worker");
-      if (count === 5) expect(calls[4]).toEndWith("up -d api worker");
+      if (count > 2) expect(calls[2]).toEndWith("up -d --wait --wait-timeout 90 postgres");
+      if (count === 6) expect(calls[5]).toEndWith("up -d api worker");
     }
     await writeFile(log, "");
     const invalid = Bun.spawn(

@@ -20,6 +20,8 @@ compose() {
 # Pull before interrupting staging. Each failure prevents all subsequent steps.
 compose pull api worker migrate
 compose stop --timeout 45 api worker
+# Coolify may remove the old stack before invoking this start command.
+compose up -d --wait --wait-timeout 90 postgres
 compose run --rm --no-deps migrate
 compose run --rm --no-deps api bun scripts/backfill-grant-eligibility.ts
 compose up -d api worker
