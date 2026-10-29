@@ -1,12 +1,20 @@
 name: Build deployment images
 on:
   workflow_dispatch:
+    inputs:
+      revision:
+        description: Reviewed full commit SHA; defaults to this workflow revision
+        type: string
+        required: false
+        default: ""
 permissions:
   contents: read
   packages: write
 jobs:
   verify:
     uses: ./.github/workflows/check.yml
+    with:
+      revision: ${{ inputs.revision || github.sha }}
   images:
     needs: verify
     if: github.ref == 'refs/heads/main'
@@ -17,6 +25,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
+          ref: ${{ inputs.revision || github.sha }}
       - name: Authenticate registry
         env:
           REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -26,14 +35,17 @@ jobs:
           REPOSITORY: ${{ github.repository }}
         run: |
           repository="ghcr.io/${REPOSITORY,,}"
-          for target in account worker admin; do
-            image="$repository/$target:$GITHUB_SHA-$GITHUB_RUN_ID"
-            docker build --build-arg "SOURCE_URL=https://github.com/$REPOSITORY/tree/$GITHUB_SHA" --target "$target" --label "org.opencontainers.image.revision=$GITHUB_SHA" -t "$image" .
+          source_revision=$(git rev-parse HEAD)
+          targets=(account worker)
+          if test -d src/apps/admin; then targets+=(admin); fi
+          for target in "${targets[@]}"; do
+            image="$repository/$target:$source_revision-$GITHUB_RUN_ID"
+            docker build --build-arg "SOURCE_URL=https://github.com/$REPOSITORY/tree/$source_revision" --target "$target" --label "org.opencontainers.image.revision=$source_revision" -t "$image" .
             docker push "$image"
             docker inspect --format='{{index .RepoDigests 0}}' "$image" >> "$GITHUB_STEP_SUMMARY"
           done
 
-          image="$repository/postgres:$GITHUB_SHA-$GITHUB_RUN_ID"
-          docker build -f deploy/postgres/Dockerfile --label "org.opencontainers.image.revision=$GITHUB_SHA" -t "$image" .
+          image="$repository/postgres:$source_revision-$GITHUB_RUN_ID"
+          docker build -f deploy/postgres/Dockerfile --label "org.opencontainers.image.revision=$source_revision" -t "$image" .
           docker push "$image"
           docker inspect --format='{{index .RepoDigests 0}}' "$image" >> "$GITHUB_STEP_SUMMARY"
