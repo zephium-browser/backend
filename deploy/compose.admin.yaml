@@ -4,6 +4,7 @@ services:
   admin:
     image: ${ADMIN_IMAGE:?Set the reviewed admin image digest built with --target admin}
     restart: unless-stopped
+    logging: { driver: json-file, options: { max-size: "20m", max-file: "5" } }
     user: bun
     read_only: true
     tmpfs:
@@ -47,6 +48,7 @@ services:
     image: ${ADMIN_IMAGE:?Set the reviewed admin image digest built with --target admin}
     profiles: [operations]
     restart: "no"
+    logging: { driver: json-file, options: { max-size: "20m", max-file: "5" } }
     user: bun
     read_only: true
     tmpfs:

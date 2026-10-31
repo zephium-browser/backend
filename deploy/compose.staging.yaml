@@ -6,6 +6,7 @@ services:
   postgres:
     image: ${ZEPHIUM_POSTGRES_IMAGE:?Set a reviewed PostgreSQL 18.4 image digest}
     restart: unless-stopped
+    logging: { driver: json-file, options: { max-size: "20m", max-file: "5" } }
     environment:
       POSTGRES_USER: zephium_owner
       POSTGRES_DB: zephium
@@ -33,6 +34,7 @@ services:
   migrate:
     image: ${ZEPHIUM_ACCOUNT_IMAGE:?Set a reviewed account image digest}
     restart: "no"
+    logging: { driver: json-file, options: { max-size: "20m", max-file: "5" } }
     user: bun
     read_only: true
     tmpfs:
@@ -54,6 +56,7 @@ services:
     image: ${ZEPHIUM_ACCOUNT_IMAGE:?Set a reviewed account image digest}
     profiles: [operations]
     restart: "no"
+    logging: { driver: json-file, options: { max-size: "20m", max-file: "5" } }
     user: bun
     read_only: true
     environment:
@@ -79,6 +82,7 @@ services:
   api:
     image: ${ZEPHIUM_ACCOUNT_IMAGE:?Set a reviewed account image digest}
     restart: unless-stopped
+    logging: { driver: json-file, options: { max-size: "20m", max-file: "5" } }
     user: bun
     read_only: true
     tmpfs:
@@ -144,6 +148,7 @@ services:
   worker:
     image: ${ZEPHIUM_WORKER_IMAGE:?Set a reviewed worker image digest}
     restart: unless-stopped
+    logging: { driver: json-file, options: { max-size: "20m", max-file: "5" } }
     user: bun
     read_only: true
     tmpfs:
