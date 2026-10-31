@@ -5,7 +5,7 @@ import { z } from "zod";
 import { enforce, privateKey, retryAfterSeconds } from "../../platform/abuse";
 import type { Config } from "../../platform/config";
 import type { Database } from "../../platform/db";
-import { AppError, errorResponse, operationalEvent } from "../../platform/errors";
+import { AppError, errorFields, errorResponse, operationalEvent } from "../../platform/errors";
 import { canonicalIp } from "../../platform/ip-bucket";
 import type { Auth } from "./auth";
 import { eligibilitySecret, normalizeEmail, resolveEligibilityKey } from "./eligibility";
@@ -58,7 +58,8 @@ export function createIdentityRoutes(
   const blockedDomains = disposableDomains(config);
   const eligibilitySecretValue = eligibilitySecret(config);
   const app = new Hono();
-  const capacity = Math.max(1, Math.floor(config.DB_POOL_SIZE / 3));
+  // Leave a quarter of the pool for authenticated traffic during a sign-in burst.
+  const capacity = Math.max(3, Math.ceil(config.DB_POOL_SIZE * 0.75));
   let active = 0;
   app.use("*", async (_c, next) => {
     if (active >= capacity) return errorResponse(new AppError("rate_limited", 429, 1));
@@ -88,6 +89,13 @@ export function createIdentityRoutes(
   }
   async function limitAttempt(value: string) {
     await enforce(db, privateKey(config.ABUSE_SECRET, "otp-verify", emailKey(value)), 300, 5);
+    // The five-minute window alone allows ~1,440 guesses a day against one mailbox.
+    await enforce(
+      db,
+      privateKey(config.ABUSE_SECRET, "otp-verify-day", emailKey(value)),
+      86400,
+      30,
+    );
   }
   async function withEmailLock<T>(
     value: string,
@@ -233,14 +241,19 @@ export function createIdentityRoutes(
     });
   });
 
-  app.onError((error) => {
+  app.onError((error, c) => {
     const appError =
       error instanceof AppError
         ? error
         : error instanceof z.ZodError || error instanceof SyntaxError
           ? new AppError("invalid_request", 400)
           : new AppError("unavailable", 503);
-    if (appError.status >= 500) operationalEvent("identity_request_failed");
+    if (appError.status >= 500)
+      operationalEvent("identity_request_failed", {
+        route: c.req.routePath,
+        code: appError.code,
+        ...(error instanceof AppError ? {} : errorFields(error)),
+      });
     return errorResponse(appError);
   });
   return app;

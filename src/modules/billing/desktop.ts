@@ -12,7 +12,12 @@ import type {
   ProductOffer,
   Purchase,
 } from "./provider";
-import { accountAccess, subscriptionDecision } from "./service";
+import {
+  accountAccess,
+  recordSubscriptionReversal,
+  subscriptionDecision,
+  subscriptionReversals,
+} from "./service";
 
 type BillingConfig = Pick<
   Config,
@@ -357,11 +362,12 @@ export function createBillingService(
         policy.plans.find((p) => p.id === s.plan)?.rank ?? 0,
       ]),
     );
-    const decision = subscriptionDecision(state, products, new Date(), ranks);
     await db.sql.begin(async (tx) => {
       const [current] =
         await tx`SELECT b.requested,b.reconciled_at,u.lifecycle FROM billing_customer b JOIN auth_user u ON u.id=b.user_id WHERE b.user_id=${userId} FOR UPDATE OF b`;
       if (current?.lifecycle !== "active") throw new AppError("account_unavailable", 403);
+      // Reversals are facts; record them even when another result owns the projection.
+      for (const order of orders) await recordSubscriptionReversal(tx, order);
       // A managed change owns subscription projection until its charge outcome is known.
       if (await pendingPlanChange(tx, userId)) return;
       // A webhook or worker result that arrived during provider I/O has priority.
@@ -370,6 +376,8 @@ export function createBillingService(
         (current.reconciled_at && new Date(current.reconciled_at) >= started)
       )
         return;
+      const reversals = await subscriptionReversals(tx, userId);
+      const decision = subscriptionDecision(state, products, new Date(), ranks, reversals);
       await tx`UPDATE billing_customer SET provider_touched=true,polar_id=${state?.customerId ?? null},status=${decision.status},
         paid_until=${decision.paidUntil?.toISOString() ?? null},subscription_id=${decision.subscriptionId},product_id=${decision.productId},
         period_start=${decision.periodStart?.toISOString() ?? null},subscription_start=${decision.subscriptionStart?.toISOString() ?? null},
@@ -381,6 +389,8 @@ export function createBillingService(
 
   async function portal(userId: string) {
     if (!enabled) throw new AppError("billing_not_enabled", 503);
+    // Each portal session costs one or two Polar calls against the organization's quota.
+    await enforce(db, privateKey(config.ABUSE_SECRET, "billing-portal", userId), 60, 6);
     const [row] =
       await db.sql`SELECT b.polar_id,u.lifecycle FROM billing_customer b JOIN auth_user u ON u.id=b.user_id WHERE b.user_id=${userId}`;
     if (row?.lifecycle !== "active") throw new AppError("account_unavailable", 403);

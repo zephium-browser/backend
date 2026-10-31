@@ -11,6 +11,13 @@ import {
 } from "../identity";
 import { type CloudPolicy, cycleAt } from "../policy";
 export type Tx = TransactionSql;
+
+/**
+ * Paid access needs a recent provider reconciliation. The window tolerates a
+ * multi-hour Polar or worker outage (which alerts) without silently moving every
+ * paying customer to the free plan, while still expiring unverifiable access.
+ */
+export const paidStateMaxAgeMs = 72 * 3600_000;
 export async function accountContext(
   tx: Tx,
   userId: string,
@@ -43,7 +50,7 @@ export async function accountContext(
     account.paid_until &&
     new Date(account.paid_until) > now &&
     account.reconciled_at &&
-    new Date(account.reconciled_at).getTime() > now.getTime() - 86400000;
+    new Date(account.reconciled_at).getTime() > now.getTime() - paidStateMaxAgeMs;
   const plan = policy.plans.find(
     (p) => p.id === (policy.selfHostedPlan ?? (paid && product ? product.plan : policy.freePlan)),
   );

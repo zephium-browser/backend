@@ -49,12 +49,13 @@ export async function reserveBudget(
 }
 
 /** Missing usage retains exposure even after customer holds are refunded. */
-export async function settleBudget(tx: Tx, id: string, actual: bigint) {
+export async function settleBudget(tx: Tx, id: string, actual: bigint, capAtReserved = false) {
   await tx`SELECT pg_advisory_xact_lock(91843724)`;
   const [record] =
     await tx`SELECT *,day::text AS day_text FROM cloud_cost_record WHERE request_id=${id} FOR UPDATE`;
   if (!record || record.terminal) return;
   const reserved = BigInt(record.reserved);
+  if (capAtReserved && actual > reserved) actual = reserved;
   const free =
     reserved === 0n ? 0n : (actual * BigInt(record.free_reserved) + reserved - 1n) / reserved;
   for (const [i, key] of keys(record.scope, record.day_text).entries()) {

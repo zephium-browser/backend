@@ -311,8 +311,13 @@ test("exhausted contact sync cannot block paid subscription reconciliation", asy
     attempts: 10,
   });
   expect(await billingRow(actor.userId)).toEqual(before);
+  // Exhausted contact work keeps retrying at the capped backoff instead of stopping forever.
   await fixture.db
     .sql`UPDATE billing_contact_job SET next_attempt=now() WHERE user_id=${actor.userId}`;
+  expect(await processContactSync(fixture.db, remote)).toBe(true);
+  const [retry] = await fixture.db
+    .sql`SELECT attempts,next_attempt>now()+interval '59 minutes' AS capped FROM billing_contact_job WHERE user_id=${actor.userId}`;
+  expect(retry).toMatchObject({ attempts: 11, capped: true });
   expect(await processContactSync(fixture.db, remote)).toBe(false);
   expect(await workOnce(fixture.db, remote, [productId])).toBe(true);
   expect(await billingRow(actor.userId)).toMatchObject({
@@ -328,7 +333,7 @@ test("exhausted contact sync cannot block paid subscription reconciliation", asy
   expect(await contactRow(actor.userId)).toMatchObject({
     requested: 1,
     processed: 0,
-    attempts: 10,
+    attempts: 11,
   });
-  expect(writes).toBe(1);
+  expect(writes).toBe(2);
 });

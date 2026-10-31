@@ -75,9 +75,9 @@ function openAI(value: unknown, nativeSearch: boolean, observed?: Set<string>): 
       if (typeof id !== "string" || !id || typeof action !== "string") return null;
       // Only the final completed item confirms that the search action finished.
       if (field(item, "status") !== "completed") return null;
-      if (action === "search") ids.add(id);
-      // Only search-action pricing is documented unambiguously. Do not assume
-      // page-open/find actions are free; ambiguous fees use hold-and-refund recovery.
+      // Page-open/find actions are billed conservatively at the search-call rate. Refunding
+      // them as unknown usage would let a prompt deterministically make a request free.
+      if (["search", "open_page", "find_in_page"].includes(action)) ids.add(id);
       else return null;
     }
     if (observed && [...observed].some((id) => !ids.has(id))) {
@@ -260,6 +260,7 @@ export class UsageObserver {
   private anthropicDelta = false;
   private anthropicSearchObserved = false;
   private openAISearch = new Set<string>();
+  private outputBytes = 0;
 
   constructor(
     private provider: ProviderName,
@@ -317,6 +318,86 @@ export class UsageObserver {
       );
     }
     return this.candidate;
+  }
+
+  /**
+   * Usage for a stream the customer stopped before the provider reported final usage.
+   * Provider-reported partial counts win; otherwise output is estimated from the
+   * forwarded text at three UTF-8 bytes per token, which over-counts typical
+   * English/code and matches CJK. Input falls back to the admission estimate.
+   */
+  interrupted(estimatedInput: number): Usage | null {
+    const output = Math.ceil(this.outputBytes / 3);
+    if (this.provider === "anthropic" && this.anthropicStart?.input != null) {
+      const start = this.anthropicStart;
+      return usage(
+        start.input ?? 0,
+        start.cached,
+        start.write5m,
+        start.write1h,
+        Math.max(start.output ?? 0, output),
+        0,
+        0,
+      );
+    }
+    if (this.provider === "google" && this.lastGoogleUsage) {
+      const reported = google({ usageMetadata: this.lastGoogleUsage }, false);
+      if (reported)
+        return usage(
+          reported.input,
+          reported.cachedInput,
+          0,
+          0,
+          Math.max(reported.output, output),
+          reported.reasoning,
+          0,
+        );
+    }
+    return usage(estimatedInput, 0, 0, 0, output, 0, 0);
+  }
+
+  private countOutput(type: unknown, value: unknown): void {
+    const bytes = (text: unknown) => {
+      if (typeof text === "string") this.outputBytes += encoder.encode(text).byteLength;
+    };
+    switch (this.provider) {
+      case "openai":
+        if (typeof type === "string" && type.endsWith(".delta")) bytes(field(value, "delta"));
+        break;
+      case "anthropic":
+        if (type === "content_block_delta") {
+          const delta = field(value, "delta");
+          for (const key of ["text", "partial_json", "thinking"]) bytes(field(delta, key));
+        }
+        break;
+      case "google": {
+        const candidates = field(value, "candidates");
+        if (!Array.isArray(candidates)) break;
+        for (const candidate of candidates) {
+          const parts = field(field(candidate, "content"), "parts");
+          if (!Array.isArray(parts)) continue;
+          for (const part of parts) {
+            bytes(field(part, "text"));
+            const call = field(part, "functionCall");
+            if (call !== undefined) bytes(JSON.stringify(call));
+          }
+        }
+        break;
+      }
+      case "deepseek":
+      case "openrouter": {
+        const choices = field(value, "choices");
+        if (!Array.isArray(choices)) break;
+        for (const choice of choices) {
+          const delta = field(choice, "delta");
+          for (const key of ["content", "reasoning_content", "reasoning"]) bytes(field(delta, key));
+          const calls = field(delta, "tool_calls");
+          if (Array.isArray(calls))
+            for (const call of calls) bytes(field(field(call, "function"), "arguments"));
+        }
+        break;
+      }
+    }
   }
 
   private feed(text: string): void {
@@ -402,13 +483,16 @@ export class UsageObserver {
       this.invalid = true;
       return;
     }
+    this.countOutput(type, value);
     switch (this.provider) {
       case "openai": {
         if (type === "response.output_item.done" && this.nativeSearch) {
           const item = field(value, "item");
           if (
             field(item, "type") === "web_search_call" &&
-            field(field(item, "action"), "type") === "search"
+            ["search", "open_page", "find_in_page"].includes(
+              String(field(field(item, "action"), "type")),
+            )
           ) {
             const id = field(item, "id");
             if (typeof id !== "string" || !id) {

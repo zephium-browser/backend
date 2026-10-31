@@ -4,7 +4,7 @@ import { AppError, operationalEvent } from "../../platform/errors";
 import { type CloudPolicy, type Model, type Rates, requestDuration } from "../policy";
 import { reserveBudget, settleBudget } from "./budget";
 import { creditUnits, unitsPerUsd } from "./denomination";
-import { accountContext, availableGrants, type Tx } from "./grants";
+import { accountContext, availableGrants, paidStateMaxAgeMs, type Tx } from "./grants";
 import { charge, type Usage } from "./pricing";
 
 const liveStates = ["preflight", "reserved", "running"];
@@ -188,7 +188,7 @@ export async function reserveRequest(
       (!ctx.account.paid_until ||
         new Date(ctx.account.paid_until) <= fresh ||
         !ctx.account.reconciled_at ||
-        new Date(ctx.account.reconciled_at).getTime() <= fresh.getTime() - 86400000)
+        new Date(ctx.account.reconciled_at).getTime() <= fresh.getTime() - paidStateMaxAgeMs)
     )
       throw new AppError("request_expired", 409);
     let validGrants = grants.filter(
@@ -295,7 +295,7 @@ export async function markDispatched(db: Database, id: string, userId: string, s
       account.paid_until &&
       new Date(account.paid_until) > now &&
       account.reconciled_at &&
-      new Date(account.reconciled_at).getTime() > now.getTime() - 86400000;
+      new Date(account.reconciled_at).getTime() > now.getTime() - paidStateMaxAgeMs;
     const currentPlan =
       policy?.selfHostedPlan ?? (paidValid && product ? product.plan : policy?.freePlan);
     const model = policy?.models.find(
@@ -359,6 +359,7 @@ export async function settleRequest(
   usage: Usage,
   status: number,
   upstreamId: string | null,
+  estimate?: { errorClass: string },
 ) {
   await db.sql.begin(async (tx) => {
     const r = await lockRequest(tx, id, userId);
@@ -366,12 +367,19 @@ export async function settleRequest(
     const actual = charge(usage, r.price_snapshot as Rates);
     // A successful duration tariff bills the customer, but is not authoritative provider token cost.
     if (r.cost_rates && usage.audioMilliseconds === undefined)
-      await settleBudget(tx, id, charge(usage, r.cost_rates as Rates));
+      await settleBudget(
+        tx,
+        id,
+        // Estimates keep a 2x output margin for unstreamed reasoning, bounded by the hold.
+        charge(estimate ? { ...usage, output: usage.output * 2 } : usage, r.cost_rates as Rates),
+        !!estimate,
+      );
     const reserved = BigInt(r.reserved);
     const charged = await settleAllocations(tx, id, actual < reserved ? actual : reserved);
     const upstream = upstreamId && /^[A-Za-z0-9._:-]{1,200}$/.test(upstreamId) ? upstreamId : null;
-    await tx`UPDATE cloud_request SET state='settled',charged=${charged.toString()},actual_cost=${actual.toString()},usage=${JSON.stringify(usage)}::jsonb,upstream_status=${status},upstream_request_id=${upstream},finished_at=now(),error_class=${actual > reserved ? "reservation_exceeded" : null} WHERE id=${id}`;
-    if (actual > reserved) operationalEvent("cloud_reservation_exceeded");
+    const errorClass = estimate?.errorClass ?? (actual > reserved ? "reservation_exceeded" : null);
+    await tx`UPDATE cloud_request SET state='settled',charged=${charged.toString()},actual_cost=${actual.toString()},usage=${JSON.stringify(usage)}::jsonb,upstream_status=${status},upstream_request_id=${upstream},finished_at=now(),error_class=${errorClass} WHERE id=${id}`;
+    if (actual > reserved && !estimate) operationalEvent("cloud_reservation_exceeded");
     const [customer] = await tx`SELECT polar_id FROM billing_customer WHERE user_id=${userId}`;
     if (customer?.polar_id) {
       const payload = {
@@ -406,13 +414,20 @@ export async function unknownRequest(db: Database, id: string, userId: string, e
 export async function recoverRequests(db: Database) {
   const expired =
     await db.sql`SELECT id,user_id,state,hold_until FROM cloud_request WHERE (state IN ('preflight','reserved','running') AND lease_until<now()) OR (state='usage_unknown' AND hold_until<now()) ORDER BY started_at LIMIT 100`;
+  // One request that cannot be recovered must not block recovery of the others.
+  let failed = 0;
   for (const r of expired) {
-    if (r.state === "preflight" || r.state === "reserved")
-      await releaseRequest(db, r.id, r.user_id, "not_dispatched");
-    else if (r.state === "running" && new Date(r.hold_until) > new Date())
-      await unknownRequest(db, r.id, r.user_id, "worker_recovery");
-    else await releaseRequest(db, r.id, r.user_id, "unconfirmed_usage_refunded");
+    try {
+      if (r.state === "preflight" || r.state === "reserved")
+        await releaseRequest(db, r.id, r.user_id, "not_dispatched");
+      else if (r.state === "running" && new Date(r.hold_until) > new Date())
+        await unknownRequest(db, r.id, r.user_id, "worker_recovery");
+      else await releaseRequest(db, r.id, r.user_id, "unconfirmed_usage_refunded");
+    } catch {
+      failed++;
+    }
   }
+  if (failed) throw new Error("Request recovery incomplete");
 }
 export async function usageSummary(db: Database, p: CloudPolicy, userId: string, readOnly = false) {
   return await db.sql.begin(async (tx) => {

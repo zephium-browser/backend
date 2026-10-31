@@ -18,16 +18,10 @@ export function installHttpMiddleware(
 ) {
   installWaitlistCors(app, config);
   const origins = new Set(config.TRUSTED_ORIGINS.split(","));
-  let activeHTTP = 0;
-  app.use("*", async (_c, next) => {
-    if (_c.req.path === audioRoute || _c.req.path === avatarPath) markIncomingStart(_c.req.raw);
-    if (activeHTTP >= 32) return errorResponse(new AppError("server_busy", 503));
-    activeHTTP++;
-    try {
-      await next();
-    } finally {
-      activeHTTP--;
-    }
+  // Admission capacity is enforced once, at the HTTP server boundary.
+  app.use("*", async (c, next) => {
+    if (c.req.path === audioRoute || c.req.path === avatarPath) markIncomingStart(c.req.raw);
+    await next();
   });
   app.use("*", secureHeaders());
   const limitBody = bodyLimit({

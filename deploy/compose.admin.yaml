@@ -4,6 +4,7 @@ services:
   admin:
     image: ${ADMIN_IMAGE:?Set the reviewed admin image digest built with --target admin}
     restart: unless-stopped
+    logging: { driver: json-file, options: { max-size: "20m", max-file: "5" } }
     user: bun
     read_only: true
     tmpfs:
@@ -11,7 +12,7 @@ services:
     expose: ["3001"]
     environment:
       ADMIN_PORT: "3001"
-      ADMIN_ACCESS_MODE: ${ADMIN_ACCESS_MODE:-off}
+      ADMIN_ACCESS_MODE: ${ADMIN_ACCESS_MODE:?Set ADMIN_ACCESS_MODE to cloudflare, or off only behind another perimeter}
       ADMIN_ACCESS_ISSUER: ${ADMIN_ACCESS_ISSUER:-}
       ADMIN_ACCESS_AUDIENCE: ${ADMIN_ACCESS_AUDIENCE:-}
       ADMIN_ACCESS_EMAILS: ${ADMIN_ACCESS_EMAILS:-}
@@ -21,6 +22,7 @@ services:
       ADMIN_READ_DATABASE_URL: ${ADMIN_READ_DATABASE_URL:?Set the separate SELECT-only reporting role URL}
       ADMIN_TRUSTED_PROXY_CIDRS: ${ADMIN_TRUSTED_PROXY_CIDRS:-}
       ADMIN_TRUSTED_CLOUDFLARE_CIDRS: ${ADMIN_TRUSTED_CLOUDFLARE_CIDRS:-}
+      ADMIN_PLAN_PRICES: ${ADMIN_PLAN_PRICES:-}
     networks:
       database: {}
       proxy:
@@ -47,6 +49,7 @@ services:
     image: ${ADMIN_IMAGE:?Set the reviewed admin image digest built with --target admin}
     profiles: [operations]
     restart: "no"
+    logging: { driver: json-file, options: { max-size: "20m", max-file: "5" } }
     user: bun
     read_only: true
     tmpfs:

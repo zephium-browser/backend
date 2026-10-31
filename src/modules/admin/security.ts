@@ -70,11 +70,21 @@ export async function limitAdminAuth(
     }
   }
 }
-export async function limitAdminReads(sql: postgres.Sql, secret: string, operator: string) {
-  await consume(sql, privateKey(secret, "admin-report", operator), 60, 60);
+export async function limitAdminReads(
+  sql: postgres.Sql,
+  secret: string,
+  operator: string,
+  bulk = false,
+) {
+  await consume(
+    sql,
+    privateKey(secret, bulk ? "admin-export" : "admin-report", operator),
+    60,
+    bulk ? 120 : 90,
+  );
 }
 export async function cleanAdminAuth(sql: postgres.Sql) {
-  await sql`DELETE FROM admin_audit_event WHERE id IN (SELECT id FROM admin_audit_event WHERE created_at<clock_timestamp()-interval '30 days' LIMIT 1000)`;
+  await sql`DELETE FROM admin_audit_event WHERE id IN (SELECT id FROM admin_audit_event WHERE created_at<clock_timestamp()-interval '400 days' LIMIT 1000)`;
   // Bound each deletion; this maintenance uses the separate auth role only.
   await sql`DELETE FROM admin_auth_throttle WHERE key IN (SELECT key FROM admin_auth_throttle WHERE expires_at<clock_timestamp() LIMIT 1000)`;
   await sql`DELETE FROM admin_auth_verification WHERE id IN (SELECT id FROM admin_auth_verification WHERE expires_at<clock_timestamp() LIMIT 1000)`;

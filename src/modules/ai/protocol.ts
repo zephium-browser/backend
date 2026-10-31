@@ -107,6 +107,18 @@ export interface PreparedRequest {
   searchCalls: number;
   cacheWriteHint?: "5m" | "unknown";
 }
+/**
+ * Model-authored tool arguments and tool JSON results are opaque data: a browser
+ * tool may legitimately pass {"type":"file"} or a "video" field. Media blocks
+ * (tool_result content, functionResponse.parts) are still inspected.
+ */
+export function toolArguments(record: Record<string, unknown>, key: string): boolean {
+  if (key === "input") return record.type === "tool_use" || record.type === "server_tool_use";
+  if (key === "args") return typeof record.name === "string";
+  if (key === "response") return typeof record.name === "string" && !("type" in record);
+  return false;
+}
+
 export function prepareRequest(
   model: Model,
   input: unknown,
@@ -162,7 +174,9 @@ export function prepareRequest(
       inspect(
         value,
         depth + 1,
-        dataOnly || ["parameters", "input_schema", "schema", "state", "questions"].includes(key),
+        dataOnly ||
+          ["parameters", "input_schema", "schema", "state", "questions"].includes(key) ||
+          toolArguments(record, key),
       );
     }
   };

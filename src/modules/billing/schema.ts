@@ -66,6 +66,8 @@ export const billingOrderReversal = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     productId: text("product_id").notNull(),
+    subscriptionId: text("subscription_id"),
+    orderCreatedAt: time("order_created_at"),
     observedAt: time("observed_at").notNull().defaultNow(),
   },
   (t) => [index("billing_order_reversal_user").on(t.userId)],

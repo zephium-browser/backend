@@ -1,6 +1,6 @@
 import { AppError } from "../../platform/errors";
 import type { Model, ProviderName } from "../policy";
-import type { PreparedRequest } from "./protocol";
+import { type PreparedRequest, toolArguments } from "./protocol";
 
 /** Local admission estimate. It is a hold, not a provider token count. */
 export interface InputReservation {
@@ -86,7 +86,8 @@ function mediaKind(provider: ProviderName, body: Record<string, unknown>): "text
       walk(
         part,
         depth + 1,
-        ["parameters", "input_schema", "schema", "response_format"].includes(key),
+        ["parameters", "input_schema", "schema", "response_format"].includes(key) ||
+          toolArguments(record, key),
       );
     }
   };

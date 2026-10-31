@@ -29,7 +29,7 @@ export function createBillingWebhookRoutes(
       config.POLAR_WEBHOOK_SECRET,
       config.POLAR_WEBHOOK_FORMAT,
     );
-    await acceptEvent(db, event.id, body, event.accountId, event.orderId);
+    await acceptEvent(db, event.id, body, event.accountId, event.orderId, event.customerId);
     return c.body(null, 202);
   });
   return router;

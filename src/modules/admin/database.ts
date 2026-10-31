@@ -83,6 +83,15 @@ export async function assertAdminDatabasePrivileges(
     "admin_report_billing",
     "admin_report_budget",
     "admin_report_linux_waitlist",
+    "admin_report_accounts",
+    "admin_report_policy",
+    "admin_report_billing_state",
+    "admin_report_plan_changes",
+    "admin_report_checkouts",
+    "admin_report_grant_detail",
+    "admin_report_spend",
+    "admin_report_jobs",
+    "admin_report_audit",
   ];
   for (const [connection, allowed] of [
     [auth, allowedAuth],

@@ -72,7 +72,8 @@ test("report balances exclude expired/revoked credit but retain outstanding hold
   });
   expect(detail.user.name).toBe("<img src=x onerror=alert(1)>");
   expect(detail.sessions).toHaveLength(1);
-  expect(detail.sessions[0]?.id).toBe(sessionId);
+  // Session identifiers are support-irrelevant and never reach the console.
+  expect(detail.sessions[0]).not.toHaveProperty("id");
   expect(Object.keys(detail.user).sort()).toEqual(
     [
       "created_at",
@@ -88,7 +89,7 @@ test("report balances exclude expired/revoked credit but retain outstanding hold
     ].sort(),
   );
   expect(Object.keys(detail.sessions[0] ?? {}).sort()).toEqual(
-    ["id", "device", "created_at", "expires_at"].sort(),
+    ["device", "created_at", "expires_at"].sort(),
   );
   const serialized = JSON.stringify(detail);
   for (const secret of [
@@ -226,13 +227,11 @@ test("usage is bounded to the selected window and provider cost never uses retai
     BigInt(overview.usage.provider_cost_usd_micros) - BigInt(base.usage.provider_cost_usd_micros),
   ).toBe(26n);
   expect(overview.usage.unknown_cost_calls - base.usage.unknown_cost_calls).toBe(1);
-  expect(overview.budget.find((row) => row.key.startsWith("report-test:day:"))).toMatchObject({
-    spent: "2333357",
-    reserved: "777777",
-  });
   expect(overview.models.find((row) => row.model_id === "report-test-model")).toEqual({
     model_id: "report-test-model",
     calls: 3,
+    users: 1,
+    failed: 1,
     charged_units: "9007199254740993",
     provider_cost_usd_micros: "26",
   });
@@ -273,7 +272,7 @@ test("detail lists and overview groupings have fixed limits and stable ordering"
   const detail = await reports.user(account.id);
   expect(detail.sessions).toHaveLength(50);
   expect(detail.requests).toHaveLength(50);
-  expect(detail.sessions.map((row) => row.id)).toEqual([...ids].sort().reverse().slice(0, 50));
+  expect(detail.sessions.every((row) => !("id" in row))).toBe(true);
   expect(detail.requests.map((row) => row.id)).toEqual([...ids].sort().reverse().slice(0, 50));
   const overview = await reports.overview(30);
   expect(overview.models).toHaveLength(20);

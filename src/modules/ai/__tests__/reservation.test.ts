@@ -312,3 +312,60 @@ test("native search capability is independent of client function-tool capability
     expect(() => prepare(m, { tools: [tool, fn] })).toThrow("tools_not_supported");
   }
 });
+
+test("tool arguments and JSON results are opaque data, not media declarations", () => {
+  const anthropic = model("anthropic");
+  const prepared = prepareRequest(
+    anthropic,
+    {
+      model: anthropic.upstreamModel,
+      max_tokens: 100,
+      messages: [
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "tool_use",
+              id: "toolu_1",
+              name: "browser_upload",
+              input: { type: "file", video: "clip.mp4", file_id: "local-1", cache_control: 1 },
+            },
+          ],
+        },
+      ],
+    },
+    "user",
+    "secret".repeat(8),
+  );
+  expect(reserveInput(anthropic, prepared).inputTokens).toBeGreaterThan(0);
+  const google = model("google");
+  const geminiBody = {
+    contents: [
+      {
+        role: "model",
+        parts: [{ functionCall: { name: "read_page", args: { type: "document", audio: true } } }],
+      },
+      {
+        role: "user",
+        parts: [{ functionResponse: { name: "read_page", response: { type: "video" } } }],
+      },
+    ],
+  };
+  expect(() => prepareRequest(google, geminiBody, "user", "secret".repeat(8))).not.toThrow();
+  // Real media blocks are still inspected.
+  expect(() =>
+    reserveInput(
+      anthropic,
+      prepareRequest(
+        anthropic,
+        {
+          model: anthropic.upstreamModel,
+          max_tokens: 100,
+          messages: [{ role: "user", content: [{ type: "document", source: { type: "url" } }] }],
+        },
+        "user",
+        "secret".repeat(8),
+      ),
+    ),
+  ).toThrow("unsupported_media");
+});

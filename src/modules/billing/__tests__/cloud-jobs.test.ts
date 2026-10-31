@@ -255,3 +255,144 @@ test("account deletion waits for an unsettled cloud request", async () => {
   ).toBe(0);
   expect(deletions).toBe(1);
 });
+
+test("account deletion is not held forever by an exhausted order job", async () => {
+  const policy = testPolicy();
+  await registerPolicy(fixture.db, policy);
+  const account = await createCloudAccount(fixture.db);
+  const orderId = crypto.randomUUID();
+  await enqueueOrder(account.userId, orderId);
+  await fixture.db.sql`UPDATE billing_order_job SET attempts=10 WHERE order_id=${orderId}`;
+  await fixture.db.sql`UPDATE auth_user SET lifecycle='deleting' WHERE id=${account.userId}`;
+  await fixture.db
+    .sql`UPDATE billing_customer SET provider_touched=true,next_attempt=now() WHERE user_id=${account.userId}`;
+  await fixture.db
+    .sql`UPDATE billing_customer SET next_attempt=now()+interval '1 day' WHERE user_id<>${account.userId}`;
+  expect(await workOnce(fixture.db, syntheticProvider(), [])).toBe(true);
+  expect(await fixture.db.sql`SELECT id FROM auth_user WHERE id=${account.userId}`).toHaveLength(0);
+});
+
+test("customer requests do not wait on the billing row during provider I/O", async () => {
+  const policy = testPolicy();
+  await registerPolicy(fixture.db, policy);
+  const account = await createCloudAccount(fixture.db);
+  await fixture.db
+    .sql`UPDATE billing_customer SET provider_touched=true,reconciled_at=NULL,next_attempt=now() WHERE user_id=${account.userId}`;
+  await fixture.db
+    .sql`UPDATE billing_customer SET next_attempt=now()+interval '1 day' WHERE user_id<>${account.userId}`;
+  let release = () => {};
+  const blocked = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let entered = () => {};
+  const inside = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const work = workOnce(
+    fixture.db,
+    syntheticProvider({
+      state: async () => {
+        entered();
+        await blocked;
+        return null;
+      },
+    }),
+    [],
+  );
+  await inside;
+  // A request-path lock on the same row must not wait for the provider.
+  const [row] = await fixture.db.sql.begin(
+    (tx) =>
+      tx`SELECT user_id FROM billing_customer WHERE user_id=${account.userId} FOR SHARE NOWAIT`,
+  );
+  expect(row?.user_id).toBe(account.userId);
+  release();
+  expect(await work).toBe(true);
+  const [after] = await fixture.db
+    .sql`SELECT attempts,reconciled_at IS NOT NULL AS reconciled FROM billing_customer WHERE user_id=${account.userId}`;
+  expect(after).toMatchObject({ attempts: 0, reconciled: true });
+});
+
+test("a database failure during billing work still records backoff", async () => {
+  const policy = testPolicy();
+  await registerPolicy(fixture.db, policy);
+  const account = await createCloudAccount(fixture.db);
+  await fixture.db.sql`UPDATE auth_user SET lifecycle='deleting' WHERE id=${account.userId}`;
+  await fixture.db
+    .sql`UPDATE billing_customer SET provider_touched=true,attempts=0,next_attempt=now() WHERE user_id=${account.userId}`;
+  await fixture.db
+    .sql`UPDATE billing_customer SET next_attempt=now()+interval '1 day' WHERE user_id<>${account.userId}`;
+  // Hold the account row so the purge transaction hits the lock timeout.
+  const holder = fixture.db.sql.begin(async (tx) => {
+    await tx`SELECT id FROM auth_user WHERE id=${account.userId} FOR UPDATE`;
+    await Bun.sleep(4000);
+  });
+  await Bun.sleep(100);
+  expect(await workOnce(fixture.db, syntheticProvider(), [])).toBe(true);
+  await holder;
+  const [after] = await fixture.db
+    .sql`SELECT attempts,next_attempt>now() AS deferred FROM billing_customer WHERE user_id=${account.userId}`;
+  expect(after).toMatchObject({ attempts: 1, deferred: true });
+});
+
+test("a refunded or charged-back subscription order ends that period's paid access", async () => {
+  const policy = testPolicy();
+  await registerPolicy(fixture.db, policy);
+  const account = await createCloudAccount(fixture.db);
+  const product = crypto.randomUUID();
+  const polarCustomer = `cus_${crypto.randomUUID()}`;
+  const day = 86400_000;
+  let periodStart = new Date(Date.now() - day);
+  const provider = syntheticProvider({
+    state: async (accountId) => ({
+      customerId: polarCustomer,
+      accountId,
+      subscriptions: [
+        {
+          id: "sub_reversal",
+          productId: product,
+          status: "active",
+          periodStart,
+          paidUntil: new Date(periodStart.getTime() + 30 * day),
+          cancelAtPeriodEnd: false,
+        },
+      ],
+    }),
+    order: async (id) => ({
+      id,
+      userId: account.userId,
+      productId: product,
+      paid: true,
+      refunded: true,
+      createdAt: new Date(Date.now() - day),
+      subscriptionId: "sub_reversal",
+    }),
+  });
+  const reconcile = async () => {
+    await fixture.db
+      .sql`UPDATE billing_customer SET next_attempt=now()+interval '1 day' WHERE user_id<>${account.userId}`;
+    expect(await workOnce(fixture.db, provider, [product])).toBe(true);
+    return (
+      await fixture.db
+        .sql`SELECT status,requested>processed AS pending FROM billing_customer WHERE user_id=${account.userId}`
+    )[0];
+  };
+  await acceptEvent(fixture.db, crypto.randomUUID(), "{}", account.userId);
+  expect(await reconcile()).toMatchObject({ status: "active", pending: false });
+
+  // Refund events name only the Polar customer; the reconciled link resolves the account.
+  const orderId = crypto.randomUUID();
+  await acceptEvent(fixture.db, crypto.randomUUID(), "{}", null, orderId, polarCustomer);
+  await fixture.db
+    .sql`UPDATE billing_order_job SET next_attempt=now()+interval '1 day' WHERE order_id<>${orderId}`;
+  expect(await processOrder(fixture.db, policy, provider)).toBe(true);
+  expect(await orderJob(orderId)).toMatchObject({ processed: 1, attempts: 0 });
+  expect(await reconcile()).toMatchObject({ status: "inactive", pending: false });
+
+  // A replayed refund changes nothing; a paid renewal opens a new period.
+  await acceptEvent(fixture.db, crypto.randomUUID(), "{}", null, orderId, polarCustomer);
+  expect(await processOrder(fixture.db, policy, provider)).toBe(true);
+  periodStart = new Date();
+  await acceptEvent(fixture.db, crypto.randomUUID(), "{}", account.userId);
+  expect(await reconcile()).toMatchObject({ status: "active", pending: false });
+});

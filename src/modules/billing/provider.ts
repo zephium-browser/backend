@@ -27,10 +27,12 @@ export interface BillingOrder {
   userId: string;
   productId: string;
   paid: boolean;
+  /** Any refund, including one Polar issues for a lost dispute (chargeback). */
   refunded: boolean;
   createdAt: Date;
   policyRevision?: number;
   refundRequiresReview?: boolean;
+  subscriptionId?: string | null;
 }
 export interface ProductOffer {
   productId: string;
@@ -174,6 +176,7 @@ export function polarProvider(
       refundRequiresReview: o.status === "partially_refunded",
       createdAt: o.createdAt,
       policyRevision: typeof revision === "number" ? revision : undefined,
+      subscriptionId: o.subscriptionId,
     };
   }
   function subscriptionValue(
@@ -503,6 +506,8 @@ export function verifyBillingEvent(
         .object({
           id: z.string().max(100).optional(),
           external_id: z.string().max(100).nullish(),
+          order_id: z.string().max(100).nullish(),
+          customer_id: z.string().max(100).nullish(),
           customer: z
             .object({ external_id: z.string().max(100).nullish() })
             .passthrough()
@@ -518,9 +523,16 @@ export function verifyBillingEvent(
     .max(200)
     .regex(/^[A-Za-z0-9_-]+$/)
     .parse(headers.get("webhook-id"));
+  const { type, data } = event.data;
   return {
     id,
-    accountId: event.data.data.external_id ?? event.data.data.customer?.external_id ?? null,
-    orderId: event.data.type.startsWith("order.") ? (event.data.data.id ?? null) : null,
+    accountId: data.external_id ?? data.customer?.external_id ?? null,
+    // Refund events (including lost disputes) name the order and Polar customer only.
+    orderId: type.startsWith("order.")
+      ? (data.id ?? null)
+      : type.startsWith("refund.")
+        ? (data.order_id ?? null)
+        : null,
+    customerId: type.startsWith("refund.") ? (data.customer_id ?? null) : null,
   };
 }

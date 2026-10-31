@@ -23,7 +23,7 @@ export async function processPlanChange(
     const [row] = await tx<
       PlanChangeRow[]
     >`SELECT c.* FROM billing_plan_change c JOIN billing_customer b ON b.user_id=c.user_id
-      WHERE c.state IN ('queued','executing','uncertain') AND c.next_attempt<=clock_timestamp() AND c.attempts<10
+      WHERE c.state IN ('queued','executing','uncertain') AND c.next_attempt<=clock_timestamp()
       ORDER BY c.next_attempt FOR UPDATE OF b,c SKIP LOCKED LIMIT 1`;
     if (!row) return null;
     const attempt = crypto.randomUUID();

@@ -36,6 +36,9 @@ const schema = z.object({
   CLIENT_NOTICE_TEXT: z.string().max(500).optional(),
   CLIENT_NOTICE_SEVERITY: z.enum(["info", "warning"]).default("info"),
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
+  // Requests admitted at once (receipt until response headers) and per client network.
+  HTTP_MAX_IN_FLIGHT: z.coerce.number().int().min(8).max(2048).default(128),
+  HTTP_MAX_PER_CLIENT: z.coerce.number().int().min(2).max(512).default(24),
   API_ORIGIN: z.url().default("http://localhost:3000"),
   TRUSTED_ORIGINS: z.string().default("http://localhost:3000"),
   TRUSTED_PROXY_CIDRS: z.string().default(""),
@@ -48,6 +51,8 @@ const schema = z.object({
   ABUSE_SECRET: z.string().min(32),
   RESEND_API_KEY: optionalSecret,
   OPERATIONS_WEBHOOK: z.url().startsWith("https://").optional(),
+  // Dead-man check (e.g. a Healthchecks.io ping URL): the worker pings only while healthy.
+  WORKER_HEARTBEAT_URL: z.url().startsWith("https://").optional(),
   EMAIL_FROM: z.string().default("Zephium <login@auth.zephium.app>"),
   POLAR_ACCESS_TOKEN: optionalSecret,
   POLAR_WEBHOOK_SECRET: optionalSecret,
@@ -82,6 +87,7 @@ const workerSchema = schema.pick({
   POLAR_YEARLY_PRODUCT_ID: true,
   CLOUD_CONFIG_PATH: true,
   OPERATIONS_WEBHOOK: true,
+  WORKER_HEARTBEAT_URL: true,
 });
 export function readWorkerConfig(env: Record<string, string | undefined> = process.env) {
   const result = workerSchema.safeParse(
@@ -91,6 +97,9 @@ export function readWorkerConfig(env: Record<string, string | undefined> = proce
     throw new Error(
       `Invalid worker configuration: ${result.error.issues.map((i) => i.path.join(".")).join(", ")}`,
     );
+  // Without a token the worker would silently skip every Polar job.
+  if (result.data.BILLING_ENABLED === "true" && !result.data.POLAR_ACCESS_TOKEN)
+    throw new Error("Billing configuration incomplete");
   return result.data;
 }
 export function readConfig(env: Record<string, string | undefined> = process.env): Config {
@@ -138,6 +147,9 @@ export function readConfig(env: Record<string, string | undefined> = process.env
       !c.RESEND_API_KEY)
   )
     throw new Error("Production requires HTTPS and email delivery");
+  // Behind a proxy without trusted CIDRs every caller shares the proxy's rate buckets.
+  if (c.NODE_ENV === "production" && c.DEPLOYMENT_MODE === "hosted" && !c.TRUSTED_PROXY_CIDRS)
+    throw new Error("Hosted production requires TRUSTED_PROXY_CIDRS");
   if (c.BILLING_ENABLED === "true" && (!c.POLAR_ACCESS_TOKEN || !c.POLAR_WEBHOOK_SECRET))
     throw new Error("Billing configuration incomplete");
   if (

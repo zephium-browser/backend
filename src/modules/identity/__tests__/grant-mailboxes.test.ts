@@ -1,5 +1,4 @@
 import { expect, test } from "bun:test";
-import { backfillGrantEligibility } from "../../../../scripts/backfill-grant-eligibility";
 import { testPolicy } from "../../../../tests/support/cloud-fixture";
 import { testDatabase } from "../../../../tests/support/database";
 import { usageSummary } from "../../credits/ledger";
@@ -12,6 +11,7 @@ import {
   normalizeEmail,
   resolveEligibilityKey,
 } from "../eligibility";
+import { backfillGrantEligibility, prepareGrantEligibility } from "../grant-backfill";
 import { assertGrantEligibilityReady, lockGrantGrouping } from "../grant-mailboxes";
 
 type Fixture = Awaited<ReturnType<typeof testDatabase>>;
@@ -162,8 +162,10 @@ test("backfill preserves issued balances and imports dormant aliases before any 
     const before = await f.db.sql`SELECT * FROM credit_grant ORDER BY id`;
     await f.db.sql`UPDATE grant_eligibility_migration SET complete=false`;
     await expect(assertGrantEligibilityReady(f.db)).rejects.toThrow("offline backfill");
-    expect(await backfillGrantEligibility(f.db, eligibilitySecret(f.config))).toBe(2);
+    // API startup completes an incomplete backfill and is a no-op afterwards.
+    await prepareGrantEligibility(f.db, eligibilitySecret(f.config));
     await assertGrantEligibilityReady(f.db);
+    await prepareGrantEligibility(f.db, eligibilitySecret(f.config));
     expect(await backfillGrantEligibility(f.db, eligibilitySecret(f.config))).toBe(2);
     expect(Array.from(await f.db.sql`SELECT * FROM credit_grant ORDER BY id`)).toEqual(
       Array.from(before),

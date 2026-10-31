@@ -11,7 +11,7 @@ if (
   !email ||
   target !== config.API_ORIGIN ||
   !["https://api.zephium.app", "https://staging-api.zephium.app"].includes(target) ||
-  !["info@zephium.app", "founder@zephium.app", "3nnigma.dev@gmail.com"].includes(email) ||
+  !["info@zephium.app", "founder@zephium.app"].includes(email) ||
   config.WAITLIST_ENABLED !== "true"
 )
   throw new Error("Explicit approved origin, test email and enabled waitlist required");

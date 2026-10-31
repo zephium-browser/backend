@@ -8,7 +8,7 @@ export async function exportUsage(db: Database, ingestUsage?: IngestUsage) {
   if (!ingestUsage) return false;
   return await db.sql.begin(async (tx) => {
     const [job] =
-      await tx`SELECT * FROM cloud_outbox WHERE delivered_at IS NULL AND attempts<10 AND next_attempt<=now() ORDER BY next_attempt FOR UPDATE SKIP LOCKED LIMIT 1`;
+      await tx`SELECT * FROM cloud_outbox WHERE delivered_at IS NULL AND next_attempt<=now() ORDER BY next_attempt FOR UPDATE SKIP LOCKED LIMIT 1`;
     if (!job) return false;
     try {
       // The same externalId is retried after a lost acknowledgement.
