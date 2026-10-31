@@ -58,7 +58,7 @@ const billing = !!config.POLAR_ACCESS_TOKEN;
 type Task = {
   name: string;
   every: number;
-  run: () => Promise<boolean | undefined | void>;
+  run: () => Promise<unknown>;
   last: number;
   failures: number;
 };
