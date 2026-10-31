@@ -16,6 +16,7 @@ const assets = {
   html: await Bun.file("dist/admin/index.html").text(),
   client: await Bun.file("dist/admin/client.js").text(),
   css: await Bun.file("dist/admin/style.css").text(),
+  icon: await Bun.file("dist/admin/favicon.svg").text(),
 };
 let server: Bun.Server<undefined>;
 const app = createAdminApp(

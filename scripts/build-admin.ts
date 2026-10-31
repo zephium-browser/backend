@@ -21,7 +21,7 @@ if (!result.success) {
   process.exit(1);
 }
 await Promise.all(
-  ["index.html", "style.css"].map((name) =>
+  ["index.html", "style.css", "favicon.svg"].map((name) =>
     Bun.write(resolve(destination, name), Bun.file(resolve(source, name))),
   ),
 );

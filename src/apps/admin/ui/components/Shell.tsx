@@ -2,6 +2,7 @@ import type { ComponentChildren } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { Operator } from "../api";
 import { type Route, routeKey, routeTitle, toHash } from "../router";
+import { BrandMark, Wordmark } from "./Brand";
 import { Icon, type IconName } from "./Icon";
 import { ThemeToggle } from "./ThemeToggle";
 
@@ -80,10 +81,11 @@ export function Shell({
       <div class="sidebar">
         <header class="sidebar-top">
           <a class="brand" href="#/overview" aria-label="Zephium Admin, overview">
-            <span class="brand-mark" aria-hidden="true">
-              Z
+            <span class="brand-mark">
+              <BrandMark />
             </span>
-            <span class="brand-name">Zephium Admin</span>
+            <Wordmark />
+            <span class="brand-tag">Admin</span>
           </a>
           <button
             type="button"

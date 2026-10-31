@@ -68,7 +68,12 @@ beforeAll(async () => {
     config,
     db,
     reports,
-    { html: "<!doctype html><title>Admin</title>", client: "export {};", css: "body{}" },
+    {
+      html: "<!doctype html><title>Admin</title>",
+      client: "export {};",
+      css: "body{}",
+      icon: "<svg/>",
+    },
     () => "198.51.100.10",
   );
   await provisionAdminOperator(db, email, "Operator", password);
@@ -234,7 +239,7 @@ test("enabled Access protects login, assets, reports and external health before 
       gatedConfig,
       db,
       reports,
-      { html: "private login", client: "", css: "" },
+      { html: "private login", client: "", css: "", icon: "" },
       () => peer,
     );
   const external = build("10.0.2.2");

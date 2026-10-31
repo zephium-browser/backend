@@ -17,7 +17,7 @@ import { readIncomingBody } from "../../platform/incoming-body";
 import type { AdminConfig } from "./config";
 import { createReportEndpoints } from "./endpoints";
 
-export type AdminAssets = { html: string; client: string; css: string };
+export type AdminAssets = { html: string; client: string; css: string; icon: string };
 export function createAdminApp(
   config: AdminConfig,
   db: AdminAuthDatabase,
@@ -88,6 +88,8 @@ export function createAdminApp(
         });
       if (url.pathname === "/assets/style.css")
         return new Response(assets.css, { headers: { "Content-Type": "text/css; charset=utf-8" } });
+      if (url.pathname === "/assets/favicon.svg")
+        return new Response(assets.icon, { headers: { "Content-Type": "image/svg+xml" } });
       if (url.pathname === "/health/ready") {
         await Promise.all([db.sql`SELECT 1`, reportsSql`SELECT 1`]);
         return json({ status: "ok" });

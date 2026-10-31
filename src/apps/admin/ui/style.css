@@ -27,25 +27,26 @@
   --radius-lg: 8px;
   --sidebar-width: 232px;
 
-  /* Neutrals */
-  --bg: #f6f6f4;
-  --sidebar: #fbfbfa;
+  /* Zinc neutrals shared with zephium.app */
+  --bg: #fafafa;
+  --sidebar: #f4f4f5;
   --surface: #ffffff;
-  --surface-2: #f3f3f0;
-  --border: #e3e3de;
-  --border-soft: #eeeeea;
-  --border-strong: #cfcfc8;
-  --text: #17191e;
-  --text-muted: #565d6b;
-  --text-faint: #6a7180;
+  --surface-2: #f4f4f5;
+  --border: #e4e4e7;
+  --border-soft: #ededef;
+  --border-strong: #d4d4d8;
+  --text: #18181b;
+  --text-muted: #52525b;
+  --text-faint: #65656e;
 
-  /* The one accent */
-  --accent: #2b59c3;
-  --accent-hover: #234aa6;
-  --accent-soft: #e8eefb;
-  --accent-text: #1f4aa8;
-  --on-accent: #ffffff;
-  --focus: #2b59c3;
+  /* Controls are monochrome like the product; color is reserved for data and status. */
+  --accent: #18181b;
+  --accent-hover: #3f3f46;
+  --accent-soft: #e9e9ec;
+  --accent-text: #18181b;
+  --on-accent: #fafafa;
+  --focus: #3f3f46;
+  --data: #3569c0;
 
   /* Status only */
   --ok: #146c3e;
@@ -63,60 +64,62 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --bg: #0e1013;
-    --sidebar: #121519;
-    --surface: #161a1e;
-    --surface-2: #1c2025;
-    --border: #272c33;
-    --border-soft: #1f242a;
-    --border-strong: #3a414a;
-    --text: #e8eaed;
-    --text-muted: #9ba1ab;
-    --text-faint: #8a919c;
-    --accent: #7ba1ff;
-    --accent-hover: #9bb8ff;
-    --accent-soft: #1b2438;
-    --accent-text: #a9c0ff;
-    --on-accent: #0b1220;
-    --focus: #9bb8ff;
-    --ok: #52c68f;
-    --ok-soft: #12281e;
-    --warn: #e3ae44;
-    --warn-soft: #2b2412;
-    --critical: #f28a87;
-    --critical-soft: #331a19;
-    --chart-muted: #6f7885;
-    --skeleton: #20252b;
+    --bg: #09090b;
+    --sidebar: #0e0e10;
+    --surface: #111113;
+    --surface-2: #18181b;
+    --border: #232327;
+    --border-soft: #1b1b1e;
+    --border-strong: #303036;
+    --text: #f4f4f6;
+    --text-muted: #a1a1a9;
+    --text-faint: #8a8a93;
+    --accent: #ededf0;
+    --accent-hover: #ffffff;
+    --accent-soft: #212125;
+    --accent-text: #f4f4f6;
+    --on-accent: #111113;
+    --focus: #c9d6ff;
+    --data: #8db9f2;
+    --ok: #88d0b3;
+    --ok-soft: #132520;
+    --warn: #e6cb80;
+    --warn-soft: #2a2414;
+    --critical: #ee9aae;
+    --critical-soft: #2e1a20;
+    --chart-muted: #6c6c75;
+    --skeleton: #1b1b1e;
     --overlay: rgb(0 0 0 / 0.55);
   }
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #0e1013;
-  --sidebar: #121519;
-  --surface: #161a1e;
-  --surface-2: #1c2025;
-  --border: #272c33;
-  --border-soft: #1f242a;
-  --border-strong: #3a414a;
-  --text: #e8eaed;
-  --text-muted: #9ba1ab;
-  --text-faint: #8a919c;
-  --accent: #7ba1ff;
-  --accent-hover: #9bb8ff;
-  --accent-soft: #1b2438;
-  --accent-text: #a9c0ff;
-  --on-accent: #0b1220;
-  --focus: #9bb8ff;
-  --ok: #52c68f;
-  --ok-soft: #12281e;
-  --warn: #e3ae44;
-  --warn-soft: #2b2412;
-  --critical: #f28a87;
-  --critical-soft: #331a19;
-  --chart-muted: #6f7885;
-  --skeleton: #20252b;
+  --bg: #09090b;
+  --sidebar: #0e0e10;
+  --surface: #111113;
+  --surface-2: #18181b;
+  --border: #232327;
+  --border-soft: #1b1b1e;
+  --border-strong: #303036;
+  --text: #f4f4f6;
+  --text-muted: #a1a1a9;
+  --text-faint: #8a8a93;
+  --accent: #ededf0;
+  --accent-hover: #ffffff;
+  --accent-soft: #212125;
+  --accent-text: #f4f4f6;
+  --on-accent: #111113;
+  --focus: #c9d6ff;
+  --data: #8db9f2;
+  --ok: #88d0b3;
+  --ok-soft: #132520;
+  --warn: #e6cb80;
+  --warn-soft: #2a2414;
+  --critical: #ee9aae;
+  --critical-soft: #2e1a20;
+  --chart-muted: #6c6c75;
+  --skeleton: #1b1b1e;
   --overlay: rgb(0 0 0 / 0.55);
 }
 
@@ -252,16 +255,27 @@ textarea {
   color: var(--text);
 }
 
+/* Matches the desktop app icon: a graphite tile with a white mark, in both themes. */
 .brand-mark {
   display: inline-grid;
+  flex: none;
   place-items: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
-  background: var(--accent);
-  color: var(--on-accent);
-  font-size: 13px;
-  font-weight: 700;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  background: linear-gradient(180deg, #262626 0%, #2f2f2f 60%, #4d4d4d 100%);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.08);
+  color: #fff;
+}
+
+.brand-tag {
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 550;
+  letter-spacing: 0.02em;
 }
 
 .nav ul {
@@ -1185,7 +1199,7 @@ textarea {
   width: var(--w, 0%);
   height: 100%;
   border-radius: 4px;
-  background: var(--accent);
+  background: var(--data);
 }
 
 .meter-warn {
@@ -1287,7 +1301,7 @@ textarea {
 }
 
 .tone-accent {
-  --tone: var(--accent);
+  --tone: var(--data);
 }
 
 .tone-muted {

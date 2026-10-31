@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { errorMessage } from "../api";
+import { BrandMark, Wordmark } from "../components/Brand";
 import { CopyButton } from "../components/CopyButton";
 import { enroll, type Phase, type Setup, setNotice, signIn, signOut, verify } from "./session";
 
@@ -51,10 +52,11 @@ export function AuthScreen({
     <main class="auth" id="main">
       <section class="auth-card" aria-labelledby="auth-title">
         <div class="auth-brand">
-          <span class="brand-mark" aria-hidden="true">
-            Z
+          <span class="brand-mark">
+            <BrandMark />
           </span>
-          <span>Zephium Admin</span>
+          <Wordmark />
+          <span class="brand-tag">Admin</span>
         </div>
         <h1 id="auth-title" class="auth-title">
           {copy.title}
