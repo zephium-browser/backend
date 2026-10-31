@@ -1,5 +1,5 @@
 import { avatarPath, avatarRequestBytes } from "../../modules/identity";
-import { AppError, errorResponse } from "../../platform/errors";
+import { AppError, errorFields, errorResponse, operationalEvent } from "../../platform/errors";
 import { markIncomingStart, readIncomingBody } from "../../platform/incoming-body";
 import { decorateWaitlistResponse, isWaitlistPath } from "./waitlist-cors";
 
@@ -115,6 +115,11 @@ export function createApiServer(
           owner.timeout(request, 30);
         return decorateWaitlistResponse(request, await app.fetch(forwarded), waitlistOrigin);
       } catch (error) {
+        if (!(error instanceof AppError))
+          operationalEvent("http_request_failed", {
+            method: request.method,
+            ...errorFields(error),
+          });
         return decorateWaitlistResponse(
           request,
           errorResponse(error instanceof AppError ? error : new AppError("unavailable", 503)),

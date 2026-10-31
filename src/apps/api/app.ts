@@ -30,7 +30,7 @@ import {
 } from "../../modules/identity";
 import type { Config } from "../../platform/config";
 import type { Database } from "../../platform/db";
-import { AppError, errorResponse, operationalEvent } from "../../platform/errors";
+import { AppError, errorFields, errorResponse, operationalEvent } from "../../platform/errors";
 
 type Session = NonNullable<
   Awaited<Auth["api"]["getSession"] extends (...args: never[]) => infer T ? Awaited<T> : never>
@@ -84,7 +84,7 @@ export function createApp(
   });
   app.route("/", createAccountRoutes(accounts));
   app.notFound(() => errorResponse(new AppError("not_found", 404)));
-  app.onError((error) => {
+  app.onError((error, c) => {
     const status =
       error instanceof AppError
         ? error.status
@@ -93,7 +93,14 @@ export function createApp(
           : 503;
     const code =
       error instanceof AppError ? error.code : status === 400 ? "invalid_request" : "unavailable";
-    if (status >= 500) operationalEvent("api_request_failed");
+    if (status >= 500 && !(error instanceof AppError))
+      operationalEvent("api_request_failed", {
+        method: c.req.method,
+        route: c.req.routePath,
+        ...errorFields(error),
+      });
+    else if (status >= 500)
+      operationalEvent("api_request_failed", { code, route: c.req.routePath });
     return errorResponse(error instanceof AppError ? error : new AppError(code, status));
   });
   return app;

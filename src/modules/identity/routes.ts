@@ -5,7 +5,7 @@ import { z } from "zod";
 import { enforce, privateKey, retryAfterSeconds } from "../../platform/abuse";
 import type { Config } from "../../platform/config";
 import type { Database } from "../../platform/db";
-import { AppError, errorResponse, operationalEvent } from "../../platform/errors";
+import { AppError, errorFields, errorResponse, operationalEvent } from "../../platform/errors";
 import { canonicalIp } from "../../platform/ip-bucket";
 import type { Auth } from "./auth";
 import { eligibilitySecret, normalizeEmail, resolveEligibilityKey } from "./eligibility";
@@ -241,14 +241,19 @@ export function createIdentityRoutes(
     });
   });
 
-  app.onError((error) => {
+  app.onError((error, c) => {
     const appError =
       error instanceof AppError
         ? error
         : error instanceof z.ZodError || error instanceof SyntaxError
           ? new AppError("invalid_request", 400)
           : new AppError("unavailable", 503);
-    if (appError.status >= 500) operationalEvent("identity_request_failed");
+    if (appError.status >= 500)
+      operationalEvent("identity_request_failed", {
+        route: c.req.routePath,
+        code: appError.code,
+        ...(error instanceof AppError ? {} : errorFields(error)),
+      });
     return errorResponse(appError);
   });
   return app;

@@ -12,7 +12,7 @@ import { assertActivePolicy, loadPolicy } from "../../modules/policy";
 import { cleanupWaitlist } from "../../modules/waitlist";
 import { readWorkerConfig } from "../../platform/config";
 import { createDatabase } from "../../platform/db";
-import { operationalEvent } from "../../platform/errors";
+import { errorFields, operationalEvent } from "../../platform/errors";
 import { sendOperationalNotification } from "../../platform/notifications";
 import { WorkerAlerts } from "./alerts";
 
@@ -89,9 +89,12 @@ async function runTasks(): Promise<boolean> {
     try {
       if ((await task.run()) === true) worked = true;
       task.failures = 0;
-    } catch {
+    } catch (error) {
       task.failures++;
-      operationalEvent(`worker_${task.name}_failed`);
+      operationalEvent(`worker_${task.name}_failed`, {
+        failures: task.failures,
+        ...errorFields(error),
+      });
     }
   }
   return worked;
