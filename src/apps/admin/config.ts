@@ -13,6 +13,8 @@ const schema = z.object({
   ADMIN_PORT: z.coerce.number().int().min(0).max(65535).default(3001),
   ADMIN_TRUSTED_PROXY_CIDRS: z.string().default(""),
   ADMIN_TRUSTED_CLOUDFLARE_CIDRS: z.string().default(""),
+  // Display-only subscription prices for MRR, e.g. "pro:monthly=2000,max:monthly=10000".
+  ADMIN_PLAN_PRICES: z.string().max(2000).default(""),
 });
 export type AdminConfig = z.infer<typeof schema>;
 export function readAdminConfig(

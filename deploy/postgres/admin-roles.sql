@@ -12,6 +12,13 @@ DO $$ BEGIN EXECUTE format('GRANT CONNECT ON DATABASE %I TO zephium_admin_auth,z
 GRANT USAGE ON SCHEMA public TO zephium_admin_auth,zephium_admin_report;
 GRANT SELECT,INSERT,UPDATE,DELETE ON admin_auth_user,admin_auth_session,admin_auth_account,admin_auth_verification,admin_auth_two_factor,admin_auth_throttle,admin_audit_event TO zephium_admin_auth;
 GRANT SELECT ON admin_report_users,admin_report_sessions,admin_report_wallets,admin_report_grants,admin_report_requests,admin_report_billing,admin_report_budget TO zephium_admin_report;
+DO $$ BEGIN
+ IF to_regclass('public.admin_report_audit') IS NOT NULL THEN
+  GRANT SELECT ON admin_report_accounts,admin_report_policy,admin_report_billing_state,admin_report_plan_changes,
+   admin_report_checkouts,admin_report_grant_detail,admin_report_spend,admin_report_jobs,admin_report_audit
+   TO zephium_admin_report;
+ END IF;
+END $$;
 ALTER ROLE zephium_admin_report SET default_transaction_read_only=on;
 ALTER ROLE zephium_admin_report SET statement_timeout='2s';
 ALTER ROLE zephium_admin_report SET lock_timeout='500ms';

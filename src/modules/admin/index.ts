@@ -7,5 +7,11 @@ export {
   createAdminDatabase,
   createReportDatabase,
 } from "./database";
-export { createAdminReports } from "./reports";
+export {
+  type AdminReports,
+  createAdminReports,
+  type PlanPrices,
+  parsePlanPrices,
+  type UserFilter,
+} from "./reports";
 export { cleanAdminAuth, limitAdminAuth, limitAdminReads } from "./security";

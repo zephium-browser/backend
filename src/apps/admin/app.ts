@@ -9,11 +9,13 @@ import {
   handleAdminAuth,
   limitAdminAuth,
   limitAdminReads,
+  parsePlanPrices,
 } from "../../modules/admin";
 import { createClientAddressResolver } from "../../platform/client-address";
 import { AppError, errorResponse, operationalEvent } from "../../platform/errors";
 import { readIncomingBody } from "../../platform/incoming-body";
 import type { AdminConfig } from "./config";
+import { createReportEndpoints } from "./endpoints";
 
 export type AdminAssets = { html: string; client: string; css: string };
 export function createAdminApp(
@@ -25,7 +27,8 @@ export function createAdminApp(
 ) {
   const verifyAccess = createAdminAccess(config);
   const auth = createAdminAuth(config, db);
-  const reports = createAdminReports(reportsSql);
+  const reports = createAdminReports(reportsSql, parsePlanPrices(config.ADMIN_PLAN_PRICES));
+  const endpoints = createReportEndpoints(reports);
   const origin = new URL(config.ADMIN_ORIGIN);
   const resolveIp = createClientAddressResolver(
     config.ADMIN_TRUSTED_PROXY_CIDRS,
@@ -130,14 +133,9 @@ export function createAdminApp(
     }
     if (request.method !== "GET" || !url.pathname.startsWith("/api/"))
       throw new AppError("not_found", 404);
-    const allowedQuery =
-      url.pathname === "/api/waitlists/linux"
-        ? ["cursor"]
-        : url.pathname === "/api/overview"
-          ? ["days"]
-          : url.pathname === "/api/users"
-            ? ["q", "cursor"]
-            : [];
+    const userPath = /^\/api\/users\/([^/]+)$/.exec(url.pathname);
+    const endpoint = userPath ? endpoints.get("/api/users/:id") : endpoints.get(url.pathname);
+    const allowedQuery = endpoint?.query ?? [];
     if (
       [...url.searchParams.keys()].some(
         (k) => !allowedQuery.includes(k) || url.searchParams.getAll(k).length !== 1,
@@ -146,44 +144,28 @@ export function createAdminApp(
       throw new AppError("invalid_request");
     const session = await getAdminSession(request.headers, auth, db);
     if (!session) throw new AppError("unauthorized", 401);
-    await limitAdminReads(db.sql, config.ADMIN_AUTH_SECRET, session.id);
+    await limitAdminReads(db.sql, config.ADMIN_AUTH_SECRET, session.id, endpoint?.bulk);
     if (url.pathname === "/api/session") return json({ operator: session });
     if (!session.mfaVerified) throw new AppError("mfa_required", 403);
+    if (!endpoint) throw new AppError("not_found", 404);
     if (reading >= 2) throw new AppError("server_busy", 503, 1);
     reading++;
     try {
-      let result: unknown;
-      let action: "overview" | "users" | "user";
       let target: string | null = null;
-      if (url.pathname === "/api/waitlists/linux") {
-        action = "users";
-        target = "linux-waitlist";
-        result = await reports.linuxWaitlist(url.searchParams.get("cursor") ?? undefined);
-      } else if (url.pathname === "/api/overview") {
-        const days = url.searchParams.get("days") ?? "1";
-        if (!["1", "7", "30"].includes(days)) throw new AppError("invalid_request");
-        action = "overview";
-        result = await reports.overview(Number(days) as 1 | 7 | 30);
-      } else if (url.pathname === "/api/users") {
-        action = "users";
-        result = await reports.users(
-          url.searchParams.get("q") ?? "",
-          url.searchParams.get("cursor") ?? undefined,
-        );
-      } else if (/^\/api\/users\/[^/]+$/.test(url.pathname)) {
+      if (userPath) {
         try {
-          target = decodeURIComponent(url.pathname.slice("/api/users/".length));
+          target = decodeURIComponent(userPath[1] ?? "");
         } catch {
           throw new AppError("invalid_request");
         }
-        action = "user";
-        result = await reports.user(target);
-      } else throw new AppError("not_found", 404);
+      }
+      const { result, action, audited } = await endpoint.run(url.searchParams, target);
       // Recheck revocation after potentially waiting on the report connection.
       const stillAllowed = await getAdminSession(request.headers, auth, db);
       if (!stillAllowed?.mfaVerified || stillAllowed.id !== session.id)
         throw new AppError("unauthorized", 401);
-      await db.sql`INSERT INTO admin_audit_event(id,operator_id,action,target_id) VALUES (${crypto.randomUUID()},${session.id},${action},${target})`;
+      await db.sql`INSERT INTO admin_audit_event(id,operator_id,action,target_id)
+        VALUES (${crypto.randomUUID()},${session.id},${action},${audited ?? target})`;
       return json(result);
     } finally {
       reading--;

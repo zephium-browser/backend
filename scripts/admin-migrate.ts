@@ -1,22 +1,25 @@
 import { createHash } from "node:crypto";
+import { readdir } from "node:fs/promises";
 import type postgres from "postgres";
 
 /** Optional admin schema: no dependency on unreleased customer API migrations. */
 export async function migrateAdmin(sql: postgres.Sql) {
-  const body = await Bun.file(
-    new URL("../src/modules/admin/migrations/0001_admin.sql", import.meta.url),
-  ).text();
-  const digest = createHash("sha256").update(body).digest("hex");
+  const directory = new URL("../src/modules/admin/migrations/", import.meta.url);
+  const names = (await readdir(directory)).filter((n) => /^\d{4}_.+\.sql$/.test(n)).sort();
   await sql.begin(async (tx) => {
     await tx`SELECT pg_advisory_xact_lock(91843729)`;
     await tx`CREATE TABLE IF NOT EXISTS admin_schema_migration(name text PRIMARY KEY,digest text NOT NULL,applied_at timestamptz NOT NULL DEFAULT now())`;
     await tx`REVOKE ALL ON admin_schema_migration FROM PUBLIC`;
     await tx`DO $$ BEGIN IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname='zephium_app') THEN REVOKE ALL ON admin_schema_migration FROM zephium_app; END IF; END $$`;
-    const [row] = await tx`SELECT digest FROM admin_schema_migration WHERE name='0001_admin.sql'`;
-    if (row && row.digest !== digest) throw new Error("Applied admin migration changed");
-    if (!row) {
-      await tx.unsafe(body);
-      await tx`INSERT INTO admin_schema_migration(name,digest) VALUES ('0001_admin.sql',${digest})`;
+    for (const name of names) {
+      const body = await Bun.file(new URL(name, directory)).text();
+      const digest = createHash("sha256").update(body).digest("hex");
+      const [row] = await tx`SELECT digest FROM admin_schema_migration WHERE name=${name}`;
+      if (row && row.digest !== digest) throw new Error("Applied admin migration changed");
+      if (!row) {
+        await tx.unsafe(body);
+        await tx`INSERT INTO admin_schema_migration(name,digest) VALUES (${name},${digest})`;
+      }
     }
   });
 }

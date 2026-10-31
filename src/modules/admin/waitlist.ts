@@ -4,7 +4,7 @@ import { AppError } from "../../platform/errors";
 
 const cursorSchema = z.object({ id: z.uuid(), until: z.iso.datetime() }).strict();
 /** Subscribed addresses only; submission is not proof of mailbox ownership. Never exposes proof tokens or email delivery data. */
-export async function reportLinuxWaitlist(sql: postgres.Sql, cursor?: string) {
+export async function reportLinuxWaitlist(sql: postgres.Sql, cursor?: string, pageSize = 200) {
   let position: z.infer<typeof cursorSchema> | undefined;
   if (cursor !== undefined) {
     try {
@@ -42,8 +42,8 @@ export async function reportLinuxWaitlist(sql: postgres.Sql, cursor?: string) {
       await tx`SELECT id,email,confirmed_at,coalesce(subscribed_at,confirmed_at) AS subscribed_at FROM admin_report_linux_waitlist
       WHERE coalesce(subscribed_at,confirmed_at) IS NOT NULL AND coalesce(subscribed_at,confirmed_at)<=${until}::timestamptz
       AND (${position?.id ?? null}::uuid IS NULL OR id>${position?.id ?? null}::uuid)
-      ORDER BY id LIMIT 201`;
-    const items = rows.slice(0, 200);
+      ORDER BY id LIMIT ${pageSize + 1}`;
+    const items = rows.slice(0, pageSize);
     const last = items.at(-1);
     return {
       available: true,
@@ -52,7 +52,7 @@ export async function reportLinuxWaitlist(sql: postgres.Sql, cursor?: string) {
       pending: Number(counts?.pending ?? 0),
       items,
       next_cursor:
-        rows.length > 200 && last
+        rows.length > pageSize && last
           ? Buffer.from(JSON.stringify({ id: last.id, until })).toString("base64url")
           : null,
     };
