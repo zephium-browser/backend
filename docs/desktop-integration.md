@@ -76,7 +76,7 @@ Use `GET /v1/usage.purchased_balance` for a monetary display: `{currency:"USD",a
 
 ## Staging handoff — 2026-10-21
 
-Use `https://staging-api.zephium.app`. Application source `36140fb084082c874686a495627271f32b8b5060` and policy revision **5** are live, with Cloud AI and Polar sandbox billing enabled. The minimum client version is `1.0.0-beta.2`. Signup remains restricted to the owner's approved test addresses; obtain the appropriate test account from the owner. Production remains separate and unqualified. The backend verification and its explicit limits are recorded in [testing.md](testing.md#recorded-evidence--2026-10-21).
+Use `https://staging-api.zephium.app`. Application source `36140fb084082c874686a495627271f32b8b5060` and policy revision **5** are live, with Cloud AI and Polar sandbox billing enabled. The minimum client version is `1.0.0-beta.2`. Signup remains restricted to the owner's approved test addresses; obtain the appropriate test account from the owner. Production remains separate and unqualified. Live verification records are kept privately by the operator.
 
 | Catalog ID | Roles | Access | Default |
 | --- | --- | --- | --- |
