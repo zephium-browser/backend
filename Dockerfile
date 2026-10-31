@@ -27,6 +27,8 @@ CMD ["bun", "src/apps/worker/main.ts"]
 
 # Independent optional admin image: no provider keys, customer auth secret or AI runtime.
 FROM dependencies AS admin-assets
+# The UI bundle takes its Preact JSX runtime settings from tsconfig.json.
+COPY tsconfig.json ./
 COPY src/apps/admin/ui ./src/apps/admin/ui
 COPY scripts/build-admin.ts ./scripts/build-admin.ts
 RUN bun scripts/build-admin.ts

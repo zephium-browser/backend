@@ -3,62 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="dark">
+  <meta name="color-scheme" content="light dark">
+  <meta name="referrer" content="no-referrer">
   <title>Zephium Admin</title>
   <link rel="stylesheet" href="/assets/style.css">
   <script type="module" src="/assets/client.js"></script>
 </head>
 <body>
-  <header class="masthead">
-    <a class="brand" href="/" aria-label="Zephium Admin home"><span class="brand-mark" aria-hidden="true">Z</span><span>Zephium <span class="muted">Admin</span></span></a>
-    <div id="operator-bar" class="operator-bar" hidden><span id="operator-email"></span><span class="badge">Read only</span><button id="sign-out" class="quiet" type="button">Sign out</button></div>
-  </header>
-  <main>
-    <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
-    <section id="auth-panel" class="auth-panel" aria-labelledby="auth-title">
-      <p class="eyebrow">Operations workspace</p><h1 id="auth-title">Sign in to your account</h1>
-      <p id="auth-description" class="muted">Restricted to authorized operators. Two-factor authentication is required.</p>
-      <form id="sign-in-form" class="form-stack">
-        <label>Email address<input id="email" name="email" type="email" autocomplete="username" required maxlength="320"></label>
-        <label>Password<input id="password" name="password" type="password" autocomplete="current-password" required></label>
-        <button type="submit">Continue</button>
-      </form>
-      <form id="enroll-form" class="form-stack" hidden>
-        <p>Set up an authenticator app to access operational data.</p>
-        <label>Confirm your password<input id="enroll-password" type="password" autocomplete="current-password" required></label>
-        <button type="submit">Set up authenticator</button>
-      </form>
-      <section id="setup-details" class="setup-details" aria-labelledby="setup-title" hidden>
-        <h2 id="setup-title">Add your authenticator</h2><p class="muted">Enter this setup key in your authenticator app, or copy the setup URI. Then enter the app's six-digit code below.</p>
-        <label>Setup key<textarea id="setup-secret" readonly rows="2" spellcheck="false"></textarea></label>
-        <label>Setup URI<textarea id="setup-uri" readonly rows="3" spellcheck="false"></textarea></label>
-        <h3>Save your recovery codes</h3><p class="muted">Keep these codes somewhere safe. Each code can be used once if you lose your authenticator.</p>
-        <textarea id="backup-codes" aria-label="Recovery codes" readonly rows="5" spellcheck="false"></textarea>
-      </section>
-      <form id="verify-form" class="form-stack" hidden>
-        <label id="code-label">Authenticator code<input id="code" type="text" autocomplete="one-time-code" inputmode="numeric" required maxlength="128"></label>
-        <button type="submit">Verify and continue</button>
-        <button id="toggle-backup" class="quiet" type="button">Use a recovery code</button>
-        <button id="auth-start-over" class="quiet" type="button">Start over</button>
-      </form>
-    </section>
-    <div id="workspace" hidden>
-      <section class="page-heading"><div><p class="eyebrow">Operations workspace</p><h1>Overview</h1><p class="muted" id="as-of">Loading operational snapshot…</p></div><div class="toolbar"><label class="period-label" for="period">Reporting period</label><select id="period"><option value="1">Last 24 hours</option><option value="7" selected>Last 7 days</option><option value="30">Last 30 days</option></select><button id="refresh" class="secondary" type="button">Refresh</button></div></section>
-      <section id="metrics" class="metrics" aria-label="Key metrics"></section>
-      <div class="panel-grid">
-        <section class="panel" aria-labelledby="usage-title"><div class="panel-heading"><h2 id="usage-title">Request activity</h2><span class="subtle">Selected period</span></div><dl id="usage-summary" class="facts"></dl></section>
-        <section class="panel" aria-labelledby="billing-title"><div class="panel-heading"><h2 id="billing-title">Billing operations</h2><span class="subtle">Current state</span></div><dl id="billing-summary" class="facts"></dl><p class="table-status">Checkout records can include completed checkouts until reconciled.</p></section>
-      </div>
-      <section class="panel" aria-labelledby="models-title"><div class="panel-heading"><h2 id="models-title">Model usage</h2><span class="subtle">Selected period</span></div><div class="table-scroll"><table><thead><tr><th scope="col">Model</th><th scope="col" class="numeric">Calls</th><th scope="col" class="numeric">Charged credits</th><th scope="col" class="numeric">Known provider cost</th></tr></thead><tbody id="models-body"></tbody></table></div></section>
-      <div class="panel-grid">
-        <section class="panel" aria-labelledby="errors-title"><div class="panel-heading"><h2 id="errors-title">Request errors</h2><span class="subtle">Selected period</span></div><div class="table-scroll"><table><thead><tr><th scope="col">Error code</th><th scope="col" class="numeric">Count</th></tr></thead><tbody id="errors-body"></tbody></table></div></section>
-        <section class="panel" aria-labelledby="budget-title"><div class="panel-heading"><h2 id="budget-title">Today’s budget exposure</h2><span class="subtle">Known cost and unconfirmed holds</span></div><div class="table-scroll"><table><thead><tr><th scope="col">Budget</th><th scope="col" class="numeric">Known cost</th><th scope="col" class="numeric">Pending exposure</th></tr></thead><tbody id="budget-body"></tbody></table></div></section>
-      </div>
-      <section class="panel" aria-labelledby="users-title"><div class="panel-heading users-heading"><div><h2 id="users-title">Users</h2><p class="subtle">Search by exact email address or user ID.</p></div><form id="search-form" class="search-form"><label class="sr-only" for="user-query">Exact email address or user ID</label><input id="user-query" type="search" placeholder="Email address or user ID" maxlength="320" autocomplete="off"><button type="submit" class="secondary">Search</button><button id="clear-search" type="button" class="quiet">Clear</button></form></div><p id="users-status" class="table-status" role="status" aria-live="polite"></p><div class="table-scroll"><table><thead><tr><th scope="col">User</th><th scope="col">Account</th><th scope="col">Subscription</th><th scope="col">Created</th><th scope="col"><span class="sr-only">Details</span></th></tr></thead><tbody id="users-body"></tbody></table></div><div class="pagination"><span id="page-label" class="subtle">Page 1</span><div><button id="previous-page" class="quiet" type="button" disabled>Previous</button><button id="next-page" class="quiet" type="button" disabled>Next</button></div></div></section>
-      <section id="user-detail" class="panel detail-panel" aria-labelledby="detail-title" tabindex="-1" hidden><div class="panel-heading"><div><p class="eyebrow">User details</p><h2 id="detail-title">User details</h2></div><button id="close-detail" type="button" class="quiet">Close details</button></div><p id="detail-status" role="status" aria-live="polite"></p><dl id="detail-facts" class="detail-facts"></dl><div id="detail-metrics" class="metrics compact"></div><h3>Sessions</h3><div class="table-scroll"><table><thead><tr><th scope="col">Device</th><th scope="col">Session ID</th><th scope="col">Created</th><th scope="col">Expires</th></tr></thead><tbody id="sessions-body"></tbody></table></div><h3>Recent requests</h3><div class="table-scroll"><table><thead><tr><th scope="col">Request / model</th><th scope="col">State</th><th scope="col">Error</th><th scope="col" class="numeric">Charged credits</th><th scope="col">Created</th></tr></thead><tbody id="requests-body"></tbody></table></div></section>
-      <section id="linux-waitlist" class="panel" hidden aria-labelledby="linux-waitlist-title"><div class="panel-heading"><h2 id="linux-waitlist-title">Linux waitlist</h2><button id="waitlist-export" type="button" class="secondary">Export subscribed emails</button></div><p id="waitlist-status" role="status"></p><p class="subtle">Linux release notification only. Export contains opted-in addresses, not necessarily verified mailboxes; no account or credits are created.</p></section>
-      <footer>Operational data is read only. Refresh to retrieve a new snapshot.</footer>
-    </div>
-  </main>
+  <div id="root"></div>
+  <noscript><p class="noscript">The Zephium admin console needs JavaScript.</p></noscript>
 </body>
 </html>
