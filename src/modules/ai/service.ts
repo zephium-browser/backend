@@ -4,6 +4,7 @@ import { AppError, errorResponse, operationalEvent } from "../../platform/errors
 import {
   accountContext,
   creditUnits,
+  emptyUsage,
   holdCost,
   markDispatched,
   openRequest,
@@ -187,6 +188,7 @@ export function createCloudService(
       let overall: ReturnType<typeof setTimeout> | undefined,
         idle: ReturnType<typeof setTimeout> | undefined;
       let idleMs = 90000;
+      let estimatedInput = 0;
       let reason: string | null = null;
       let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
       let observer: UsageObserver | undefined;
@@ -214,7 +216,18 @@ export function createCloudService(
       const failAccounting = async (code: string) => {
         if (!requestId) return;
         try {
-          if (dispatched) await unknownRequest(db, requestId, identity.userId, code);
+          // A customer who stops after dispatch pays for the input the provider processed.
+          if (dispatched && code === "client_disconnected")
+            await settleRequest(
+              db,
+              requestId,
+              identity.userId,
+              { ...emptyUsage(), input: estimatedInput },
+              499,
+              null,
+              { errorClass: code },
+            );
+          else if (dispatched) await unknownRequest(db, requestId, identity.userId, code);
           else await releaseRequest(db, requestId, identity.userId, code);
         } catch {
           operationalEvent("cloud_accounting_recovery_required");
@@ -281,6 +294,7 @@ export function createCloudService(
           transport,
           abort.signal,
         );
+        estimatedInput = customerInput;
         const outputBound =
           provider === "google"
             ? Math.min(model.contextWindow, prepared.outputLimit * 2)
@@ -387,8 +401,18 @@ export function createCloudService(
             clearTimers();
             try {
               const usage = observer?.finish();
+              // Stop is ordinary: charge what was delivered instead of refunding it in full
+              // and counting it against the customer's unconfirmed-usage allowance.
+              const stopped =
+                !usage && error === "client_disconnected"
+                  ? observer?.interrupted(estimatedInput)
+                  : null;
               if (usage)
                 await settleRequest(db, id, identity.userId, usage, upstream.status, upstreamId);
+              else if (stopped)
+                await settleRequest(db, id, identity.userId, stopped, upstream.status, upstreamId, {
+                  errorClass: "client_disconnected",
+                });
               else await unknownRequest(db, id, identity.userId, error ?? "usage_missing");
               const receipt = await requestReceipt(db, identity.userId, id);
               const trailer = error

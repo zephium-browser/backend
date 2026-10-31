@@ -359,6 +359,7 @@ export async function settleRequest(
   usage: Usage,
   status: number,
   upstreamId: string | null,
+  estimate?: { errorClass: string },
 ) {
   await db.sql.begin(async (tx) => {
     const r = await lockRequest(tx, id, userId);
@@ -366,12 +367,19 @@ export async function settleRequest(
     const actual = charge(usage, r.price_snapshot as Rates);
     // A successful duration tariff bills the customer, but is not authoritative provider token cost.
     if (r.cost_rates && usage.audioMilliseconds === undefined)
-      await settleBudget(tx, id, charge(usage, r.cost_rates as Rates));
+      await settleBudget(
+        tx,
+        id,
+        // Estimates keep a 2x output margin for unstreamed reasoning, bounded by the hold.
+        charge(estimate ? { ...usage, output: usage.output * 2 } : usage, r.cost_rates as Rates),
+        !!estimate,
+      );
     const reserved = BigInt(r.reserved);
     const charged = await settleAllocations(tx, id, actual < reserved ? actual : reserved);
     const upstream = upstreamId && /^[A-Za-z0-9._:-]{1,200}$/.test(upstreamId) ? upstreamId : null;
-    await tx`UPDATE cloud_request SET state='settled',charged=${charged.toString()},actual_cost=${actual.toString()},usage=${JSON.stringify(usage)}::jsonb,upstream_status=${status},upstream_request_id=${upstream},finished_at=now(),error_class=${actual > reserved ? "reservation_exceeded" : null} WHERE id=${id}`;
-    if (actual > reserved) operationalEvent("cloud_reservation_exceeded");
+    const errorClass = estimate?.errorClass ?? (actual > reserved ? "reservation_exceeded" : null);
+    await tx`UPDATE cloud_request SET state='settled',charged=${charged.toString()},actual_cost=${actual.toString()},usage=${JSON.stringify(usage)}::jsonb,upstream_status=${status},upstream_request_id=${upstream},finished_at=now(),error_class=${errorClass} WHERE id=${id}`;
+    if (actual > reserved && !estimate) operationalEvent("cloud_reservation_exceeded");
     const [customer] = await tx`SELECT polar_id FROM billing_customer WHERE user_id=${userId}`;
     if (customer?.polar_id) {
       const payload = {

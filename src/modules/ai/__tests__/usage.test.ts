@@ -48,6 +48,7 @@ test("OpenAI completed usage partitions cache and deduplicates final search call
     searchCalls: 1,
   });
   expect(extractUsage("openai", response, true)?.searchCalls).toBe(1);
+  // Page-open/find actions are charged at the search-call rate rather than refunded.
   for (const action of ["open_page", "find_in_page"]) {
     const ambiguous = {
       ...response,
@@ -61,15 +62,22 @@ test("OpenAI completed usage partitions cache and deduplicates final search call
         },
       ],
     };
-    expect(extractUsage("openai", ambiguous, true)).toBeNull();
+    expect(extractUsage("openai", ambiguous, true)?.searchCalls).toBe(2);
     expect(
       observe(
         "openai",
         event("response.completed", { type: "response.completed", response: ambiguous }),
         true,
-      ),
-    ).toBeNull();
+      )?.searchCalls,
+    ).toBe(2);
   }
+  const unknownAction = {
+    ...response,
+    output: [
+      { type: "web_search_call", id: "ws3", status: "completed", action: { type: "unknown" } },
+    ],
+  };
+  expect(extractUsage("openai", unknownAction, true)).toBeNull();
   for (const status of ["incomplete", "failed"] as const) {
     const terminal = { ...response, status };
     expect(
@@ -353,4 +361,56 @@ test("SSE event and total stream limits invalidate without retaining payloads", 
   const oversized = new UsageObserver("openai", false);
   oversized.push(new Uint8Array(32 * 1024 * 1024 + 1));
   expect(oversized.finish()).toBeNull();
+});
+
+const stopped = (provider: ProviderName, text: string, estimatedInput = 100) => {
+  const parser = new UsageObserver(provider, false);
+  const bytes = encoder.encode(text);
+  for (let i = 0; i < bytes.length; i += 5) parser.push(bytes.subarray(i, i + 5));
+  return parser.interrupted(estimatedInput);
+};
+
+test("stopped streams estimate output from delivered text, at most three bytes per token", () => {
+  expect(
+    stopped(
+      "openai",
+      event("response.output_text.delta", { type: "response.output_text.delta", delta: "abcdef" }) +
+        event("response.function_call_arguments.delta", {
+          type: "response.function_call_arguments.delta",
+          delta: '{"q":1}',
+        }),
+    ),
+  ).toMatchObject({ input: 100, output: 5, reasoning: 0, searchCalls: 0 });
+  // CJK text is three UTF-8 bytes per character and about one token each.
+  expect(
+    stopped(
+      "deepseek",
+      `data: ${JSON.stringify({ choices: [{ delta: { content: "你好世界" } }] })}\n\n`,
+    ),
+  ).toMatchObject({ input: 100, output: 4 });
+});
+
+test("stopped Anthropic and Google streams prefer provider-reported partial counts", () => {
+  expect(
+    stopped(
+      "anthropic",
+      event("message_start", {
+        type: "message_start",
+        message: { usage: { input_tokens: 42, output_tokens: 1, cache_read_input_tokens: 8 } },
+      }) +
+        event("content_block_delta", {
+          type: "content_block_delta",
+          delta: { type: "text_delta", text: "x".repeat(30) },
+        }),
+    ),
+  ).toMatchObject({ input: 42, cachedInput: 8, output: 10 });
+  expect(
+    stopped(
+      "google",
+      `data: ${JSON.stringify({
+        candidates: [{ content: { parts: [{ text: "hi" }] } }],
+        usageMetadata: { promptTokenCount: 50, candidatesTokenCount: 20 },
+      })}\n\n`,
+    ),
+  ).toMatchObject({ input: 50, output: 20 });
 });

@@ -460,7 +460,7 @@ test("terminal missing usage stays pending; truncated and failed streams append 
   expect(await row(brokenId)).toMatchObject({ state: "released", charged: "0" });
 });
 
-test("caller cancellation aborts transport and retains an unknown usage hold", async () => {
+test("caller cancellation aborts transport and charges only delivered usage", async () => {
   let cancelled = false;
   let transportSignal: AbortSignal | null = null;
   generateFn = async (_model, _prepared, signal) => {
@@ -489,9 +489,43 @@ test("caller cancellation aborts transport and retains an unknown usage hold", a
   expect(cancelled).toBe(true);
   expect(required(transportSignal as AbortSignal | null).aborted).toBe(true);
   const id = required(response.headers.get("x-zephium-request-id"));
-  expect(await row(id)).toMatchObject({ state: "usage_unknown", charged: "0" });
-  await expireHold(id);
-  expect(await row(id)).toMatchObject({ state: "released", charged: "0" });
+  // The seven delivered bytes ("partial") are billed as three output tokens plus input.
+  let stopped = await row(id);
+  for (let i = 0; i < 50 && stopped.state !== "settled"; i++) {
+    await Bun.sleep(10);
+    stopped = await row(id);
+  }
+  expect(stopped).toMatchObject({ state: "settled", error_class: "client_disconnected" });
+  expect(stopped.usage).toMatchObject({ output: 3, reasoning: 0, searchCalls: 0 });
+  expect(BigInt(stopped.charged)).toBeGreaterThan(0n);
+  expect(BigInt(stopped.charged)).toBeLessThanOrEqual(BigInt(stopped.reserved));
+});
+
+test("repeated Stop does not exhaust the unconfirmed-usage allowance", async () => {
+  generateFn = async () =>
+    new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(
+            new TextEncoder().encode(
+              'event: response.output_text.delta\ndata: {"delta":"partial"}\n\n',
+            ),
+          );
+        },
+      }),
+      { headers: { "Content-Type": "text/event-stream" } },
+    );
+  for (let i = 0; i < 5; i++) {
+    const response = await request("/openai/v1/responses", "POST", { ...prompt, stream: true });
+    expect(response.status).toBe(200);
+    const reader = required(response.body).getReader();
+    await reader.read();
+    await reader.cancel("caller stopped reading");
+    const id = required(response.headers.get("x-zephium-request-id"));
+    for (let wait = 0; wait < 50 && (await row(id)).state !== "settled"; wait++)
+      await Bun.sleep(10);
+    expect((await row(id)).state).toBe("settled");
+  }
 });
 
 test("provider 429 returns safe Retry-After and releases all held credit", async () => {
