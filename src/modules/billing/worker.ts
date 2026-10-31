@@ -17,7 +17,8 @@ type ClaimedCustomer = {
   provider_touched: boolean;
   checkout_until: Date | null;
   lifecycle: string;
-  claimed_at: Date;
+  /** Database clock text at claim; compared in SQL to keep microsecond precision. */
+  claimed_at: string;
 };
 
 /**
@@ -44,10 +45,11 @@ export async function workOnce(
     if (!row) return null;
     // Recheck using a new READ COMMITTED snapshot after acquiring the billing lock.
     if (await pendingPlanChange(tx, row.user_id)) return null;
-    const [lease] = await tx<{ claimed_at: Date }[]>`
+    const [lease] = await tx<{ claimed_at: string }[]>`
       UPDATE billing_customer SET next_attempt=now()+interval '5 minutes'
-      WHERE user_id=${row.user_id} RETURNING clock_timestamp() AS claimed_at`;
-    return { ...row, claimed_at: new Date(lease?.claimed_at ?? Date.now()) } as ClaimedCustomer;
+      WHERE user_id=${row.user_id} RETURNING clock_timestamp()::text AS claimed_at`;
+    if (!lease) return null;
+    return { ...row, claimed_at: lease.claimed_at } as ClaimedCustomer;
   });
   if (!claimed) return false;
   try {
@@ -76,7 +78,8 @@ async function reconcile(
   if (state && state.accountId !== userId) throw new Error("Identity mismatch");
   const decision = subscriptionDecision(state, products, new Date(), ranks);
   await db.sql.begin(async (tx) => {
-    const [current] = await tx`SELECT b.reconciled_at,u.lifecycle
+    const [current] = await tx`SELECT u.lifecycle,
+      coalesce(b.reconciled_at >= ${claimed.claimed_at}::timestamptz, false) AS superseded
       FROM billing_customer b JOIN auth_user u ON u.id=b.user_id WHERE b.user_id=${userId} FOR UPDATE OF b`;
     if (!current) return;
     if (current.lifecycle === "deleting" || (await pendingPlanChange(tx, userId))) {
@@ -85,14 +88,17 @@ async function reconcile(
       return;
     }
     // A customer refresh that committed during our provider read has priority.
-    if (current.reconciled_at && new Date(current.reconciled_at) >= claimed.claimed_at) {
+    if (current.superseded) {
       await tx`UPDATE billing_customer SET next_attempt=now() WHERE user_id=${userId} AND requested>processed`;
       return;
     }
     await tx`UPDATE billing_customer SET polar_id=${state?.customerId ?? null}, status=${decision.status}, paid_until=${decision.paidUntil?.toISOString() ?? null},
       subscription_id=${decision.subscriptionId},product_id=${decision.productId},period_start=${decision.periodStart?.toISOString() ?? null},subscription_start=${decision.subscriptionStart?.toISOString() ?? null},
       cancel_at_period_end=${decision.cancelAtPeriodEnd}, reconciled_at=now(), processed=${claimed.requested}, attempts=0,
-      next_attempt=CASE WHEN requested>${claimed.requested} THEN now() ELSE now()+interval '15 minutes' END
+      next_attempt=CASE WHEN requested>${claimed.requested} THEN now()
+        -- Paid state must stay fresh; other customers change through webhooks and checkout.
+        WHEN ${decision.status}='active' THEN now()+interval '15 minutes'
+        ELSE now()+interval '6 hours' END
       WHERE user_id=${userId}`;
   });
 }

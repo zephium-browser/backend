@@ -275,6 +275,9 @@ export function createCloudService(
         const key = createHash("sha256")
           .update(`${identity.userId}:${rawKey.toLowerCase()}`)
           .digest("hex");
+        // Local estimates reserve credit; only provider-reported usage determines the debit.
+        // Pure validation runs before admission so rejected bodies never take locks or rows.
+        const bound = reserveInput(model, prepared);
         const opened = await openRequest(
           db,
           policy,
@@ -285,8 +288,6 @@ export function createCloudService(
           provider === "typesafe" ? "/v1/systemone" : provider,
         );
         requestId = opened.id;
-        // Local estimates reserve credit; only provider-reported usage determines the debit.
-        const bound = reserveInput(model, prepared);
         const customerInput = await customerInputTokens(
           model,
           prepared,
@@ -313,7 +314,8 @@ export function createCloudService(
           identity.userId,
           identity.sessionId,
           reserved,
-          bound.inputTokens,
+          // The provider rate bucket uses the refined count; exposure keeps the conservative bound.
+          customerInput,
           model.costRates
             ? holdCost(
                 bound.inputTokens + bound.searchInputTokens,
