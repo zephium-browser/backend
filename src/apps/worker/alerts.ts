@@ -12,6 +12,10 @@ const messages = {
     failing: "Zephium cloud spending is near a configured safety limit",
     recovered: "Zephium cloud spending is below configured safety warning thresholds",
   },
+  worker: {
+    failing: "Zephium worker tasks are failing repeatedly",
+    recovered: "Zephium worker tasks have recovered",
+  },
 } as const;
 type Category = keyof typeof messages;
 type AlertState = { failing: boolean; notified: boolean; lastAlert: number | null };
@@ -22,6 +26,7 @@ export class WorkerAlerts {
     billing: { failing: false, notified: false, lastAlert: null },
     contact: { failing: false, notified: false, lastAlert: null },
     budget: { failing: false, notified: false, lastAlert: null },
+    worker: { failing: false, notified: false, lastAlert: null },
   };
 
   constructor(

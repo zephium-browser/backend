@@ -1,5 +1,5 @@
 import type { TransactionSql } from "postgres";
-import type { Database } from "../../platform/db";
+import { cleanupBatchSize, type Database, deleteInBatches } from "../../platform/db";
 
 /** Called only after the deletion coordinator confirms provider and job cleanup. */
 export async function purgeAccount(
@@ -13,14 +13,23 @@ export async function purgeAccount(
 
 type MaintenanceSql = Database["sql"] | TransactionSql;
 
-export async function cleanupExpiredActionCodes(sql: MaintenanceSql): Promise<void> {
-  await sql`DELETE FROM action_otp WHERE expires_at < now()`;
+export function cleanupExpiredActionCodes(sql: MaintenanceSql): Promise<void> {
+  return deleteInBatches(
+    () => sql`DELETE FROM action_otp WHERE ctid IN (
+      SELECT ctid FROM action_otp WHERE expires_at < now() LIMIT ${cleanupBatchSize})`,
+  );
 }
 
-export async function cleanupExpiredAuthCodes(sql: MaintenanceSql): Promise<void> {
-  await sql`DELETE FROM auth_verification WHERE expires_at < now()`;
+export function cleanupExpiredAuthCodes(sql: MaintenanceSql): Promise<void> {
+  return deleteInBatches(
+    () => sql`DELETE FROM auth_verification WHERE id IN (
+      SELECT id FROM auth_verification WHERE expires_at < now() LIMIT ${cleanupBatchSize})`,
+  );
 }
 
-export async function cleanupExpiredSessions(sql: MaintenanceSql): Promise<void> {
-  await sql`DELETE FROM auth_session WHERE expires_at < now()`;
+export function cleanupExpiredSessions(sql: MaintenanceSql): Promise<void> {
+  return deleteInBatches(
+    () => sql`DELETE FROM auth_session WHERE id IN (
+      SELECT id FROM auth_session WHERE expires_at < now() LIMIT ${cleanupBatchSize})`,
+  );
 }

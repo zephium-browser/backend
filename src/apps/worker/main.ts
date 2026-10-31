@@ -24,6 +24,12 @@ const policy = await loadPolicy(config.CLOUD_CONFIG_PATH);
 if (config.DEPLOYMENT_MODE === "hosted" && policy.selfHostedPlan)
   throw new Error("Hosted deployment cannot select a self-hosted plan");
 await assertActivePolicy(db, policy);
+if (
+  config.NODE_ENV === "production" &&
+  config.DEPLOYMENT_MODE === "hosted" &&
+  !config.OPERATIONS_WEBHOOK
+)
+  throw new Error("Worker requires an operational alert destination");
 const products = [
   ...policy.subscriptions.map((p) => p.productId),
   config.POLAR_MONTHLY_PRODUCT_ID,
@@ -35,9 +41,6 @@ const ranks = Object.fromEntries(
     policy.plans.find((p) => p.id === s.plan)?.rank ?? 0,
   ]),
 );
-let stopped = false;
-let lastCleanup = 0;
-let lastHealth = 0;
 const operationsWebhook = config.OPERATIONS_WEBHOOK;
 const alerts = operationsWebhook
   ? new WorkerAlerts(
@@ -45,13 +48,98 @@ const alerts = operationsWebhook
       () => operationalEvent("worker_alert_delivery_failed"),
     )
   : undefined;
-let lastRecovery = 0;
-if (
-  config.NODE_ENV === "production" &&
-  config.DEPLOYMENT_MODE === "hosted" &&
-  !config.OPERATIONS_WEBHOOK
-)
-  throw new Error("Worker requires an operational alert destination");
+const billing = !!config.POLAR_ACCESS_TOKEN;
+
+/**
+ * Each task fails independently: a broken cleanup or recovery step must never
+ * stop billing reconciliation. A task that keeps failing marks the worker
+ * unready and alerts, instead of silently retrying behind a healthy status.
+ */
+type Task = {
+  name: string;
+  every: number;
+  run: () => Promise<boolean | undefined | void>;
+  last: number;
+  failures: number;
+};
+const failingAfter = 5;
+const tasks: Task[] = [
+  { name: "cleanup", every: 3600_000, run: () => cleanup(db) },
+  { name: "waitlist_cleanup", every: 3600_000, run: () => cleanupWaitlist(db) },
+  { name: "request_recovery", every: 5000, run: () => recoverRequests(db) },
+  ...(billing
+    ? [
+        { name: "plan_changes", every: 0, run: () => processPlanChange(db, provider, policy) },
+        { name: "orders", every: 0, run: () => processOrder(db, policy, provider) },
+        { name: "contacts", every: 0, run: () => processContactSync(db, provider) },
+        { name: "usage_export", every: 0, run: () => exportUsage(db, ingestUsage) },
+      ]
+    : []),
+  { name: "reconcile", every: 0, run: () => workOnce(db, provider, products, ranks) },
+].map((task) => ({ ...task, last: 0, failures: 0 }));
+
+/** Returns true when any queue made progress, so the loop can continue without sleeping. */
+async function runTasks(): Promise<boolean> {
+  let worked = false;
+  for (const task of tasks) {
+    if (stopped) break;
+    if (task.every && Date.now() - task.last < task.every) continue;
+    // Periodic tasks advance their schedule even on failure; queues retry next tick.
+    task.last = Date.now();
+    try {
+      if ((await task.run()) === true) worked = true;
+      task.failures = 0;
+    } catch {
+      task.failures++;
+      operationalEvent(`worker_${task.name}_failed`);
+    }
+  }
+  return worked;
+}
+
+let lastHealth = 0;
+let lastHeartbeat = 0;
+async function reportHealth(): Promise<void> {
+  const [status] =
+    await db.sql`SELECT EXISTS(SELECT 1 FROM billing_plan_change WHERE attempts>=10 AND state IN ('executing','uncertain')) OR EXISTS(SELECT 1 FROM billing_customer WHERE attempts >= 10) OR EXISTS(SELECT 1 FROM billing_order_job WHERE attempts>=10 AND requested>processed) OR EXISTS(SELECT 1 FROM cloud_outbox WHERE attempts>=10 AND delivered_at IS NULL) AS exhausted, EXISTS(SELECT 1 FROM billing_contact_job j JOIN auth_user u ON u.id=j.user_id WHERE j.attempts>=10 AND j.requested>j.processed AND u.lifecycle='active') AS contact_exhausted`;
+  const failing = tasks.filter((task) => task.failures >= failingAfter).map((task) => task.name);
+  const ready = !status?.exhausted && failing.length === 0;
+  await writeFile(
+    "/tmp/zephium-worker-health.tmp",
+    JSON.stringify({ time: Date.now(), ready, failing }),
+    { mode: 0o600 },
+  );
+  await rename("/tmp/zephium-worker-health.tmp", "/tmp/zephium-worker-health.json");
+  let budget: boolean | undefined;
+  try {
+    budget = await budgetNearLimit(db, policy);
+  } catch {
+    operationalEvent("worker_budget_check_failed");
+  }
+  await alerts?.scan({
+    billing: Boolean(status?.exhausted),
+    contact: Boolean(status?.contact_exhausted),
+    worker: failing.length > 0,
+    ...(budget === undefined ? {} : { budget }),
+  });
+  // An external dead-man check alerts when these pings stop (dead host, stuck loop).
+  if (config.WORKER_HEARTBEAT_URL && ready && Date.now() - lastHeartbeat >= 60_000) {
+    try {
+      const response = await fetch(config.WORKER_HEARTBEAT_URL, {
+        method: "POST",
+        redirect: "error",
+        signal: AbortSignal.timeout(5000),
+      });
+      await response.body?.cancel();
+      if (response.ok) lastHeartbeat = Date.now();
+      else operationalEvent("worker_heartbeat_failed");
+    } catch {
+      operationalEvent("worker_heartbeat_failed");
+    }
+  }
+}
+
+let stopped = false;
 process.once("SIGTERM", () => {
   stopped = true;
 });
@@ -67,49 +155,20 @@ try {
         process.exitCode = 1;
         break;
       }
-      if (Date.now() - lastHealth > 60_000) {
-        const [status] =
-          await db.sql`SELECT EXISTS(SELECT 1 FROM billing_plan_change WHERE attempts>=10 AND state IN ('executing','uncertain')) OR EXISTS(SELECT 1 FROM billing_customer WHERE attempts >= 10) OR EXISTS(SELECT 1 FROM billing_order_job WHERE attempts>=10 AND requested>processed) OR EXISTS(SELECT 1 FROM cloud_outbox WHERE attempts>=10 AND delivered_at IS NULL) AS exhausted, EXISTS(SELECT 1 FROM billing_contact_job j JOIN auth_user u ON u.id=j.user_id WHERE j.attempts>=10 AND j.requested>j.processed AND u.lifecycle='active') AS contact_exhausted`;
-        const health = { time: Date.now(), ready: !status?.exhausted };
-        await writeFile("/tmp/zephium-worker-health.tmp", JSON.stringify(health), { mode: 0o600 });
-        await rename("/tmp/zephium-worker-health.tmp", "/tmp/zephium-worker-health.json");
-        lastHealth = Date.now();
-        await alerts?.scan({
-          billing: Boolean(status?.exhausted),
-          contact: Boolean(status?.contact_exhausted),
-        });
-        try {
-          const budgetWarning = await budgetNearLimit(db, policy);
-          await alerts?.scan({ budget: budgetWarning });
-        } catch {
-          operationalEvent("worker_budget_check_failed");
-        }
-      }
-      if (Date.now() - lastCleanup > 3600_000) {
-        await cleanup(db);
-        await cleanupWaitlist(db);
-        lastCleanup = Date.now();
-      }
-      if (Date.now() - lastRecovery > 5000) {
-        await recoverRequests(db);
-        lastRecovery = Date.now();
-      }
-      const planChanged = config.POLAR_ACCESS_TOKEN
-        ? await processPlanChange(db, provider, policy)
-        : false;
-      const orderWorked = config.POLAR_ACCESS_TOKEN
-        ? await processOrder(db, policy, provider)
-        : false;
-      const contactWorked = config.POLAR_ACCESS_TOKEN
-        ? await processContactSync(db, provider)
-        : false;
-      const exported = config.POLAR_ACCESS_TOKEN ? await exportUsage(db, ingestUsage) : false;
-      const reconciled = await workOnce(db, provider, products, ranks);
-      if (planChanged || orderWorked || contactWorked || exported || reconciled) continue;
     } catch {
-      operationalEvent("worker_iteration_failed");
+      operationalEvent("worker_database_unavailable");
+      await Bun.sleep(1000);
+      continue;
     }
-    await Bun.sleep(1000);
+    if (Date.now() - lastHealth > 60_000) {
+      try {
+        await reportHealth();
+        lastHealth = Date.now();
+      } catch {
+        operationalEvent("worker_health_failed");
+      }
+    }
+    if (!(await runTasks())) await Bun.sleep(1000);
   }
 } finally {
   await db.close();

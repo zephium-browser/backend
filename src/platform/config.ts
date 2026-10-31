@@ -48,6 +48,8 @@ const schema = z.object({
   ABUSE_SECRET: z.string().min(32),
   RESEND_API_KEY: optionalSecret,
   OPERATIONS_WEBHOOK: z.url().startsWith("https://").optional(),
+  // Dead-man check (e.g. a Healthchecks.io ping URL): the worker pings only while healthy.
+  WORKER_HEARTBEAT_URL: z.url().startsWith("https://").optional(),
   EMAIL_FROM: z.string().default("Zephium <login@auth.zephium.app>"),
   POLAR_ACCESS_TOKEN: optionalSecret,
   POLAR_WEBHOOK_SECRET: optionalSecret,
@@ -82,6 +84,7 @@ const workerSchema = schema.pick({
   POLAR_YEARLY_PRODUCT_ID: true,
   CLOUD_CONFIG_PATH: true,
   OPERATIONS_WEBHOOK: true,
+  WORKER_HEARTBEAT_URL: true,
 });
 export function readWorkerConfig(env: Record<string, string | undefined> = process.env) {
   const result = workerSchema.safeParse(
@@ -91,6 +94,9 @@ export function readWorkerConfig(env: Record<string, string | undefined> = proce
     throw new Error(
       `Invalid worker configuration: ${result.error.issues.map((i) => i.path.join(".")).join(", ")}`,
     );
+  // Without a token the worker would silently skip every Polar job.
+  if (result.data.BILLING_ENABLED === "true" && !result.data.POLAR_ACCESS_TOKEN)
+    throw new Error("Billing configuration incomplete");
   return result.data;
 }
 export function readConfig(env: Record<string, string | undefined> = process.env): Config {

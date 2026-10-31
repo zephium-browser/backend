@@ -8,7 +8,7 @@ export async function processOrder(db: Database, p: CloudPolicy, provider: Billi
   if (!fetchOrder) return false;
   return await db.sql.begin(async (tx) => {
     const [job] =
-      await tx`SELECT * FROM billing_order_job WHERE requested>processed AND attempts<10 AND next_attempt<=now() ORDER BY next_attempt FOR UPDATE SKIP LOCKED LIMIT 1`;
+      await tx`SELECT * FROM billing_order_job WHERE requested>processed AND next_attempt<=now() ORDER BY next_attempt FOR UPDATE SKIP LOCKED LIMIT 1`;
     if (!job) return false;
     try {
       const order = await fetchOrder(job.order_id);

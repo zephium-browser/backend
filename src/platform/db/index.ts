@@ -26,3 +26,12 @@ export function createDatabase(
 }
 
 export type { TransactionSql as Transaction, TransactionSql as Tx } from "postgres";
+
+export const cleanupBatchSize = 5000;
+/** Repeats a `LIMIT cleanupBatchSize` delete so each statement stays well inside the statement timeout. */
+export async function deleteInBatches(
+  run: () => Promise<{ count: number }>,
+  maxBatches = 200,
+): Promise<void> {
+  for (let i = 0; i < maxBatches; i++) if ((await run()).count < cleanupBatchSize) return;
+}

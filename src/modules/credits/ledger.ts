@@ -4,7 +4,7 @@ import { AppError, operationalEvent } from "../../platform/errors";
 import { type CloudPolicy, type Model, type Rates, requestDuration } from "../policy";
 import { reserveBudget, settleBudget } from "./budget";
 import { creditUnits, unitsPerUsd } from "./denomination";
-import { accountContext, availableGrants, type Tx } from "./grants";
+import { accountContext, availableGrants, paidStateMaxAgeMs, type Tx } from "./grants";
 import { charge, type Usage } from "./pricing";
 
 const liveStates = ["preflight", "reserved", "running"];
@@ -188,7 +188,7 @@ export async function reserveRequest(
       (!ctx.account.paid_until ||
         new Date(ctx.account.paid_until) <= fresh ||
         !ctx.account.reconciled_at ||
-        new Date(ctx.account.reconciled_at).getTime() <= fresh.getTime() - 86400000)
+        new Date(ctx.account.reconciled_at).getTime() <= fresh.getTime() - paidStateMaxAgeMs)
     )
       throw new AppError("request_expired", 409);
     let validGrants = grants.filter(
@@ -295,7 +295,7 @@ export async function markDispatched(db: Database, id: string, userId: string, s
       account.paid_until &&
       new Date(account.paid_until) > now &&
       account.reconciled_at &&
-      new Date(account.reconciled_at).getTime() > now.getTime() - 86400000;
+      new Date(account.reconciled_at).getTime() > now.getTime() - paidStateMaxAgeMs;
     const currentPlan =
       policy?.selfHostedPlan ?? (paidValid && product ? product.plan : policy?.freePlan);
     const model = policy?.models.find(
@@ -406,13 +406,20 @@ export async function unknownRequest(db: Database, id: string, userId: string, e
 export async function recoverRequests(db: Database) {
   const expired =
     await db.sql`SELECT id,user_id,state,hold_until FROM cloud_request WHERE (state IN ('preflight','reserved','running') AND lease_until<now()) OR (state='usage_unknown' AND hold_until<now()) ORDER BY started_at LIMIT 100`;
+  // One request that cannot be recovered must not block recovery of the others.
+  let failed = 0;
   for (const r of expired) {
-    if (r.state === "preflight" || r.state === "reserved")
-      await releaseRequest(db, r.id, r.user_id, "not_dispatched");
-    else if (r.state === "running" && new Date(r.hold_until) > new Date())
-      await unknownRequest(db, r.id, r.user_id, "worker_recovery");
-    else await releaseRequest(db, r.id, r.user_id, "unconfirmed_usage_refunded");
+    try {
+      if (r.state === "preflight" || r.state === "reserved")
+        await releaseRequest(db, r.id, r.user_id, "not_dispatched");
+      else if (r.state === "running" && new Date(r.hold_until) > new Date())
+        await unknownRequest(db, r.id, r.user_id, "worker_recovery");
+      else await releaseRequest(db, r.id, r.user_id, "unconfirmed_usage_refunded");
+    } catch {
+      failed++;
+    }
   }
+  if (failed) throw new Error("Request recovery incomplete");
 }
 export async function usageSummary(db: Database, p: CloudPolicy, userId: string, readOnly = false) {
   return await db.sql.begin(async (tx) => {
