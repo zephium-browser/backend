@@ -76,9 +76,9 @@ Apply migration `0008_subscription_changes.sql` before starting an image contain
 
 Create distinct fixed-price monthly Pro and Max sandbox products, retain historical product mappings, and enable their offers only in a reviewed policy revision. Never reuse a product ID for a different entitlement. Verify successful and declined upgrades, renewal downgrades, one payment for repeated confirmation, and proportional allowance changes in sandbox. Existing $1/$10 staging products are test fixtures, not approved production prices. USD20 Pro and USD100 Max monthly pricing does not set production allowance amounts or annual pricing.
 
-The `billing_plan_change` record is the durable source for each operation. Provider I/O runs outside database transactions; a lease and dispatch marker fence stale workers. After a possible dispatch, recovery only reads the subscription. Ten failed recovery attempts alert the operator and preserve the pending record; they do not charge again. Pending operations block subscription reconciliation and final account purge, while account access is still disabled immediately upon deletion request.
+The `billing_plan_change` record is the durable source for each operation. Provider I/O runs outside database transactions; a lease and dispatch marker fence stale workers. After a possible dispatch, recovery only reads the subscription. After ten failed recovery attempts the operator is alerted; read-only recovery keeps retrying at the capped one-hour backoff and never charges again. Pending operations block subscription reconciliation and final account purge, while account access is still disabled immediately upon deletion request.
 
-For an exhausted operation, inspect its content-free identifiers and authoritative Polar subscription/payment records. Once the provider is reachable, reset only its retry count and next-attempt timestamp to resume **read-only** recovery. Never change it back to `queued`, clear its dispatch marker, delete its audit record, or replay PATCH as a retry. If Polar cannot establish the outcome, keep the operation unresolved and escalate to provider support. A manual resolution requires explicit evidence about the charge and subscription, a stopped/drained worker, and a reviewed account-scoped database change; never alter allowance balances to hide an unresolved payment.
+For an exhausted operation, inspect its content-free identifiers and authoritative Polar subscription/payment records. Recovery resumes by itself within an hour once the provider is reachable; to retry sooner, reset only its next-attempt timestamp. Never change it back to `queued`, clear its dispatch marker, delete its audit record, or replay PATCH as a retry. If Polar cannot establish the outcome, keep the operation unresolved and escalate to provider support. A manual resolution requires explicit evidence about the charge and subscription, a stopped/drained worker, and a reviewed account-scoped database change; never alter allowance balances to hide an unresolved payment.
 
 ## Production deployment preparation
 
@@ -94,7 +94,7 @@ Keep the pgBackRest secret file accessible only to its intended container OS use
 
 Apply `0009_billing_contact_jobs.sql` before starting images with contact synchronization. It seeds pending checks for existing active, verified accounts with a provider relationship. Verified account email changes enqueue work in the same transaction as the local change and session revocation. The queue stores only an account ID and retry counters; the worker reads the latest verified address under the account's billing lock and updates an existing Polar customer by stable external ID. It never creates a customer or changes historical invoices.
 
-Contact work has separate attempts and scheduling from subscription reconciliation. A lost update response is recovered by reading current customer state; an already-matching contact needs no second write. Ten failures trigger a content-free operational alert while subscription refresh continues. Contact-only exhaustion does not mark the whole worker unready. Deleting accounts and pending subscription changes are excluded; account purge removes obsolete contact jobs.
+Contact work has separate attempts and scheduling from subscription reconciliation. A lost update response is recovered by reading current customer state; an already-matching contact needs no second write. Ten failures trigger a content-free operational alert while subscription refresh continues; the job keeps retrying hourly. Contact-only exhaustion does not mark the whole worker unready. Deleting accounts and pending subscription changes are excluded; account purge removes obsolete contact jobs.
 
 After correcting provider permissions or a contact conflict, an operator may reset the specific `billing_contact_job` row's attempts and next-attempt time to retry the latest verified address. Do not edit the account's verified email, change external customer IDs, or clear billing/credit safety records as a workaround. Existing `customers:write` permission is required.
 
@@ -119,7 +119,15 @@ Use Full (strict) TLS, bypass API caching, avoid browser challenges for native c
 In Coolify 4.4, mark the existing pgBackRest configuration mount as host-managed. Its storage writer must not recreate or chmod this secret file. Verify mode `0600`, PostgreSQL ownership, and the read-only mount after Compose reload and deployment.
 
 
-Worker alert categories (billing jobs, contact updates, spending thresholds) have
+## Worker reliability
+
+Each worker task (cleanup, request recovery, plan changes, orders, contact sync, usage export, subscription reconciliation) fails independently: one failing step never stops the others. A task that fails five consecutive times marks the worker unready in its health file and sends the `worker` alert. Every durable queue keeps retrying with exponential backoff capped at one hour; ten attempts mark a row exhausted for alerts and the admin Jobs view, but never stop it permanently. Exhausted order and usage-export jobs no longer hold account deletion.
+
+Subscription reconciliation, deletion and contact sync claim a row with a five-minute lease and call Polar outside any database transaction, so customer requests never wait on the provider. Customers with an active subscription are re-read every 15 minutes; others every six hours (webhooks, checkout and refresh still enqueue immediate work). Paid access requires a reconciliation within the last 72 hours, so a multi-hour Polar or worker outage alerts rather than silently moving paying customers to Free.
+
+Set `WORKER_HEARTBEAT_URL` to an external dead-man check (for example a Healthchecks.io ping URL with a few minutes of grace). The worker pings it at most once a minute while healthy, so the check alerts on a dead host, a stopped container or a stuck loop, independently of `OPERATIONS_WEBHOOK`.
+
+Worker alert categories (billing jobs, contact updates, spending thresholds, worker tasks) have
 independent one-hour reminder cooldowns. New failures alert immediately; recoveries
 send once after a delivered failure alert. Failed deliveries retry at the next
 health scan, and a failed category does not suppress the others. This delivery
