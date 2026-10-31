@@ -22,7 +22,7 @@ Check the account's sending quota and test delivery to each staging tester. A ge
 
 Use the sandbox account, separate from production. In **Products**, create the intended monthly/yearly Pro subscriptions and one-time credit packs, each with one active fixed price. Copy their nonsecret product IDs into the reviewed staging policy. Put the sandbox access token in `POLAR_ACCESS_TOKEN`.
 
-In **Webhooks**, add `https://staging-api.zephium.app/webhooks/polar` for customer-state and paid/refunded-order events. Save its signing secret directly as `POLAR_WEBHOOK_SECRET`; use Standard Webhooks format. Delivery can be tested after the API is reachable.
+In **Webhooks**, add `https://staging-api.zephium.app/webhooks/polar` for `customer.state_changed`, `order.paid`, `order.updated`, `order.refunded`, `refund.created` and `refund.updated`. Polar reports a lost dispute (chargeback) as a refund, so the refund events cover both. Save its signing secret directly as `POLAR_WEBHOOK_SECRET`; use Standard Webhooks format. Delivery can be tested after the API is reachable.
 
 The website owner must supply `https://zephium.app/billing/return`. Set both `BILLING_SUCCESS_URL` and `BILLING_RETURN_URL` to that deployed page. It is only a return page; the backend confirms purchases with Polar. Leave `BILLING_ENABLED=false` until sandbox checkout, portal, webhook and refund checks can be run. The staging Compose file fixes the Polar environment to sandbox.
 

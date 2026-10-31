@@ -125,6 +125,8 @@ Each worker task (cleanup, request recovery, plan changes, orders, contact sync,
 
 Subscription reconciliation, deletion and contact sync claim a row with a five-minute lease and call Polar outside any database transaction, so customer requests never wait on the provider. Customers with an active subscription are re-read every 15 minutes; others every six hours (webhooks, checkout and refresh still enqueue immediate work). Paid access requires a reconciliation within the last 72 hours, so a multi-hour Polar or worker outage alerts rather than silently moving paying customers to Free.
 
+Any refund of a subscription order, full or partial, and any lost dispute (which Polar records as a refund) ends paid access for the billing period that order paid for, at the next reconciliation (seconds after the webhook). A later paid renewal restores access. The subscription itself is not cancelled in Polar; cancel or revoke it there as well when the customer should not be charged again. To compensate a customer without removing access, use a discount rather than a refund. Refunded top-ups revoke their credit grant as before.
+
 Set `WORKER_HEARTBEAT_URL` to an external dead-man check (for example a Healthchecks.io ping URL with a few minutes of grace). The worker pings it at most once a minute while healthy, so the check alerts on a dead host, a stopped container or a stuck loop, independently of `OPERATIONS_WEBHOOK`.
 
 Worker alert categories (billing jobs, contact updates, spending thresholds, worker tasks) have

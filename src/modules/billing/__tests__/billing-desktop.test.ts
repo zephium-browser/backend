@@ -894,7 +894,7 @@ test("subscription plan and interval use the current paid product and stay null 
       subscription: { plan: null, interval: null },
     });
     await isolated.db
-      .sql`UPDATE billing_customer SET paid_until=now()+interval '1 month',reconciled_at=now()-interval '2 days' WHERE user_id=${owner.userId}`;
+      .sql`UPDATE billing_customer SET paid_until=now()+interval '1 month',reconciled_at=now()-interval '4 days' WHERE user_id=${owner.userId}`;
     expect(await service.summary(owner.userId)).toMatchObject({
       paid: false,
       subscription: { status: "unknown", plan: null, interval: null },

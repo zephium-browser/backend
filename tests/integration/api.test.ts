@@ -264,6 +264,29 @@ test("webhooks verify exact bytes in both signing formats and deduplicate durabl
     await expect(acceptEvent(fixture.db, id, `${body} `, user.id)).rejects.toThrow();
   }
 });
+test("refund and dispute events route to their order and Polar customer", () => {
+  const secret = `whsec_${Buffer.from("a sufficiently long webhook secret").toString("base64")}`;
+  const sign = (type: string, data: Record<string, unknown>) => {
+    const body = JSON.stringify({ type, data });
+    const now = new Date();
+    const headers = new Headers({
+      "webhook-id": `evt_${type.replace(".", "_")}`,
+      "webhook-timestamp": String(Math.floor(now.getTime() / 1000)),
+      "webhook-signature": new Webhook(secret).sign(`evt_${type.replace(".", "_")}`, now, body),
+    });
+    return verifyBillingEvent(body, headers, secret, "standard");
+  };
+  expect(
+    sign("refund.updated", { id: "ref_1", order_id: "ord_1", customer_id: "cus_1", dispute: {} }),
+  ).toMatchObject({ accountId: null, orderId: "ord_1", customerId: "cus_1" });
+  expect(
+    sign("order.refunded", { id: "ord_2", customer_id: "cus_2", customer: { external_id: "u" } }),
+  ).toMatchObject({ accountId: "u", orderId: "ord_2", customerId: null });
+  expect(sign("subscription.updated", { id: "sub_1", customer_id: "cus_3" })).toMatchObject({
+    orderId: null,
+    customerId: null,
+  });
+});
 test("billing preserves paid cancellation periods; trials, foreign products, and expiration do not grant access", () => {
   const s: CustomerState = {
     customerId: "p",

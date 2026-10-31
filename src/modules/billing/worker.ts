@@ -9,7 +9,7 @@ import {
 } from "../identity";
 import { pendingPlanChange } from "./plan-changes";
 import type { BillingProvider } from "./provider";
-import { subscriptionDecision } from "./service";
+import { subscriptionDecision, subscriptionReversals } from "./service";
 
 type ClaimedCustomer = {
   user_id: string;
@@ -76,7 +76,6 @@ async function reconcile(
   const userId = claimed.user_id;
   const state = await provider.state(userId);
   if (state && state.accountId !== userId) throw new Error("Identity mismatch");
-  const decision = subscriptionDecision(state, products, new Date(), ranks);
   await db.sql.begin(async (tx) => {
     const [current] = await tx`SELECT u.lifecycle,
       coalesce(b.reconciled_at >= ${claimed.claimed_at}::timestamptz, false) AS superseded
@@ -92,6 +91,9 @@ async function reconcile(
       await tx`UPDATE billing_customer SET next_attempt=now() WHERE user_id=${userId} AND requested>processed`;
       return;
     }
+    // Read under the billing lock so a reversal recorded during provider I/O applies now.
+    const reversals = await subscriptionReversals(tx, userId);
+    const decision = subscriptionDecision(state, products, new Date(), ranks, reversals);
     await tx`UPDATE billing_customer SET polar_id=${state?.customerId ?? null}, status=${decision.status}, paid_until=${decision.paidUntil?.toISOString() ?? null},
       subscription_id=${decision.subscriptionId},product_id=${decision.productId},period_start=${decision.periodStart?.toISOString() ?? null},subscription_start=${decision.subscriptionStart?.toISOString() ?? null},
       cancel_at_period_end=${decision.cancelAtPeriodEnd}, reconciled_at=now(), processed=${claimed.requested}, attempts=0,

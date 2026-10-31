@@ -1,7 +1,7 @@
 export { budgetNearLimit } from "./budget";
 export { creditUnits, unitsPerUsd } from "./denomination";
 export { exportUsage, type IngestUsage } from "./export";
-export { accountContext, applyTopup } from "./grants";
+export { accountContext, applyTopup, paidStateMaxAgeMs } from "./grants";
 export {
   markDispatched,
   openRequest,

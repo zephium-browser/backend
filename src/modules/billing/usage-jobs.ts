@@ -3,6 +3,7 @@ import { operationalEvent } from "../../platform/errors";
 import { applyTopup } from "../credits";
 import type { CloudPolicy } from "../policy";
 import type { BillingProvider } from "./provider";
+import { recordSubscriptionReversal } from "./service";
 export async function processOrder(db: Database, p: CloudPolicy, provider: BillingProvider) {
   const fetchOrder = provider.order?.bind(provider);
   if (!fetchOrder) return false;
@@ -15,6 +16,9 @@ export async function processOrder(db: Database, p: CloudPolicy, provider: Billi
       if (order.userId !== job.user_id || order.id !== job.order_id)
         throw new Error("Order identity mismatch");
       await applyTopup(db, p, order);
+      if (await recordSubscriptionReversal(tx, order))
+        await tx`UPDATE billing_customer SET provider_touched=true,requested=requested+1,next_attempt=now(),attempts=0
+          WHERE user_id=${order.userId}`;
       await tx`UPDATE billing_order_job SET processed=${job.requested},attempts=0 WHERE order_id=${job.order_id}`;
     } catch {
       const attempts = Number(job.attempts) + 1;
