@@ -147,6 +147,9 @@ export function readConfig(env: Record<string, string | undefined> = process.env
       !c.RESEND_API_KEY)
   )
     throw new Error("Production requires HTTPS and email delivery");
+  // Behind a proxy without trusted CIDRs every caller shares the proxy's rate buckets.
+  if (c.NODE_ENV === "production" && c.DEPLOYMENT_MODE === "hosted" && !c.TRUSTED_PROXY_CIDRS)
+    throw new Error("Hosted production requires TRUSTED_PROXY_CIDRS");
   if (c.BILLING_ENABLED === "true" && (!c.POLAR_ACCESS_TOKEN || !c.POLAR_WEBHOOK_SECRET))
     throw new Error("Billing configuration incomplete");
   if (

@@ -381,6 +381,8 @@ export function createBillingService(
 
   async function portal(userId: string) {
     if (!enabled) throw new AppError("billing_not_enabled", 503);
+    // Each portal session costs one or two Polar calls against the organization's quota.
+    await enforce(db, privateKey(config.ABUSE_SECRET, "billing-portal", userId), 60, 6);
     const [row] =
       await db.sql`SELECT b.polar_id,u.lifecycle FROM billing_customer b JOIN auth_user u ON u.id=b.user_id WHERE b.user_id=${userId}`;
     if (row?.lifecycle !== "active") throw new AppError("account_unavailable", 403);

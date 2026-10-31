@@ -39,6 +39,9 @@ export function readAdminConfig(
     throw new Error(
       "Admin requires an exact HTTPS origin (loopback HTTP allowed only outside production)",
     );
+  // An internet-reachable console must opt out of the Access perimeter deliberately.
+  if (c.NODE_ENV === "production" && !env.ADMIN_ACCESS_MODE)
+    throw new Error("Production admin requires ADMIN_ACCESS_MODE=cloudflare (or an explicit off)");
   if (c.NODE_ENV === "production" && c.ADMIN_AUTH_DATABASE_URL === c.ADMIN_READ_DATABASE_URL)
     throw new Error("Admin requires separate authentication and read-only database roles");
   if (c.ADMIN_ACCESS_MODE === "cloudflare") {

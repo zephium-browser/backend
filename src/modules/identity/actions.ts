@@ -167,6 +167,7 @@ export async function consumeActionCode<T = void>(
   if (!/^\d{6}$/.test(input.otp)) throw new AppError("invalid_code", 401);
   if (input.purpose === "email-change" && !effect) throw new AppError("invalid_request");
   await enforce(db, ownerLimitKey(config, input, "verify"), 300, 5);
+  await enforce(db, ownerLimitKey(config, input, "verify-day"), 86400, 30);
   const outcome = await db.sql.begin(async (tx) => {
     // Sign-in uses the same keyed per-email advisory lock. Acquire both addresses
     // before billing/user row locks, in a stable order across competing changes.

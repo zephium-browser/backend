@@ -89,6 +89,13 @@ export function createIdentityRoutes(
   }
   async function limitAttempt(value: string) {
     await enforce(db, privateKey(config.ABUSE_SECRET, "otp-verify", emailKey(value)), 300, 5);
+    // The five-minute window alone allows ~1,440 guesses a day against one mailbox.
+    await enforce(
+      db,
+      privateKey(config.ABUSE_SECRET, "otp-verify-day", emailKey(value)),
+      86400,
+      30,
+    );
   }
   async function withEmailLock<T>(
     value: string,

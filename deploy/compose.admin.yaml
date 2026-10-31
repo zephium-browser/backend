@@ -11,7 +11,7 @@ services:
     expose: ["3001"]
     environment:
       ADMIN_PORT: "3001"
-      ADMIN_ACCESS_MODE: ${ADMIN_ACCESS_MODE:-off}
+      ADMIN_ACCESS_MODE: ${ADMIN_ACCESS_MODE:?Set ADMIN_ACCESS_MODE to cloudflare, or off only behind another perimeter}
       ADMIN_ACCESS_ISSUER: ${ADMIN_ACCESS_ISSUER:-}
       ADMIN_ACCESS_AUDIENCE: ${ADMIN_ACCESS_AUDIENCE:-}
       ADMIN_ACCESS_EMAILS: ${ADMIN_ACCESS_EMAILS:-}
