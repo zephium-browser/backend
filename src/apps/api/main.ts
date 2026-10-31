@@ -3,8 +3,10 @@ import { polarProvider } from "../../modules/billing";
 import { assertGrantEligibilityReady, createAuth, resendMailer } from "../../modules/identity";
 import { assertActivePolicy, loadPolicy } from "../../modules/policy";
 import { assertWaitlistReady } from "../../modules/waitlist";
+import { createClientAddressResolver } from "../../platform/client-address";
 import { readConfig } from "../../platform/config";
 import { createDatabase } from "../../platform/db";
+import { emailNetwork } from "../../platform/ip-bucket";
 import { createApp } from "./app";
 import { createApiServer } from "./server";
 
@@ -44,6 +46,26 @@ const server = createApiServer(
   config.PORT,
   undefined,
   config.WAITLIST_WEB_ORIGIN,
+  {
+    maxInFlight: config.HTTP_MAX_IN_FLIGHT,
+    maxPerClient: config.HTTP_MAX_PER_CLIENT,
+    maxBufferedBytes: 96 * 1024 * 1024,
+    clientAddress: (() => {
+      const resolve = createClientAddressResolver(
+        config.TRUSTED_PROXY_CIDRS,
+        config.TRUSTED_CLOUDFLARE_CIDRS,
+      );
+      return (request: Request, peer: string) => {
+        const address = resolve(peer, request.headers);
+        try {
+          // IPv6 privacy addresses share one /64 admission bucket.
+          return emailNetwork(address);
+        } catch {
+          return address;
+        }
+      };
+    })(),
+  },
 );
 async function stop() {
   let timer: ReturnType<typeof setTimeout> | undefined;

@@ -52,6 +52,12 @@ Keep staging and production secrets, databases, provider projects, Polar environ
 
 The API retains account, billing, policy, grant and usage records. It also retains the current processed account avatar when a user uploads one. It does not persist prompts, page text, generated output, or AI image/audio inputs. External email, billing and model providers have their own retention terms. Avoid logging request content, OTPs, credentials or raw identifiers during troubleshooting.
 
+## Request admission
+
+The API admits at most `HTTP_MAX_IN_FLIGHT` requests (default 128) from receipt until response headers, and at most `HTTP_MAX_PER_CLIENT` (default 24) per client network (IPv4 address or IPv6 /64, resolved through the trusted proxy chain). Buffered request bodies share a 96 MiB budget: a declared `Content-Length`, or the route maximum for chunked uploads, is reserved before reading. Excess requests receive `503 server_busy` with `Retry-After: 1`. Established AI streams no longer hold an admission slot; the policy's `globalConcurrent`, `maxFreeConcurrent` and per-plan `maxConcurrent` bound them. `/health/live`, `/health/ready` and `/v1/client-config` bypass admission so probes stay truthful under load. Sign-in routes may use up to three quarters of `DB_POOL_SIZE` at once.
+
+A desktop Work run opens about five concurrent Cloud streams, so `globalConcurrent` is the effective hosted user ceiling: 32 serves roughly six simultaneous Work runs. Size it from provider rate limits and measured memory, not from this default.
+
 ## Enrollment and email behavior
 
 `SIGNUP_OPEN=false` stops new account creation; existing allowed users can still sign in. `SIGNUP_EMAIL_ALLOWLIST` restricts sign-in and email-change destinations to exact comma-separated addresses; an empty value permits all addresses. Case/whitespace are normalized, plus aliases remain distinct, and deletion remains available. Keep staging on an explicit list.

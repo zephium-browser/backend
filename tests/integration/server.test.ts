@@ -206,3 +206,50 @@ test("avatar PUT permits its bounded multipart size without raising other accoun
     await server.stop(true);
   }
 });
+
+test("admission caps per client and keeps health probes answerable under saturation", async () => {
+  const release: (() => void)[] = [];
+  const server = createApiServer(
+    () => ({
+      async fetch(request) {
+        if (new URL(request.url).pathname === "/slow")
+          await new Promise<void>((resolve) => release.push(resolve));
+        return Response.json({ ok: true });
+      },
+    }),
+    await freePort(),
+    loopback,
+    undefined,
+    {
+      maxInFlight: 4,
+      maxPerClient: 2,
+      maxBufferedBytes: 1024,
+      clientAddress: (request) => request.headers.get("x-test-client") ?? "unknown",
+    },
+  );
+  const base = `http://${loopback}:${server.port}`;
+  const slow = (client: string) => fetch(`${base}/slow`, { headers: { "x-test-client": client } });
+  try {
+    const held = [slow("a"), slow("a"), slow("b"), slow("b")];
+    for (let i = 0; i < 100 && release.length < 4; i++) await Bun.sleep(5);
+    expect(release).toHaveLength(4);
+    const perClient = await fetch(`${base}/other`, { headers: { "x-test-client": "a" } });
+    expect(perClient.status).toBe(503);
+    expect(perClient.headers.get("Retry-After")).toBe("1");
+    const global = await fetch(`${base}/other`, { headers: { "x-test-client": "c" } });
+    expect(global.status).toBe(503);
+    expect((await fetch(`${base}/health/ready`)).status).toBe(200);
+    expect((await fetch(`${base}/v1/client-config`)).status).toBe(200);
+    const oversized = await fetch(`${base}/upload`, {
+      method: "POST",
+      headers: { "x-test-client": "d", "content-type": "application/json" },
+      body: "x".repeat(2048),
+    });
+    expect(oversized.status).toBe(503);
+    for (const done of release) done();
+    expect((await Promise.all(held)).map((r) => r.status)).toEqual([200, 200, 200, 200]);
+  } finally {
+    for (const done of release) done();
+    await server.stop(true);
+  }
+});

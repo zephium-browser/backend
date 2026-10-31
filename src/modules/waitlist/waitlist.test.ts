@@ -384,7 +384,11 @@ test("CORS covers media errors, missing routes, preflight rejection and unavaila
 });
 
 test("real HTTP boundary keeps CORS on oversized bodies, socket admission and unexpected errors", async () => {
-  const server = createApiServer(() => app, 0, "127.0.0.1", origin);
+  const server = createApiServer(() => app, 0, "127.0.0.1", origin, {
+    maxInFlight: 16,
+    maxPerClient: 64,
+    maxBufferedBytes: 1024 * 1024,
+  });
   const base = `http://127.0.0.1:${server.port}/v1/waitlists/linux`;
   const controller = new AbortController();
   const pending: Promise<unknown>[] = [];

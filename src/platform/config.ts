@@ -36,6 +36,9 @@ const schema = z.object({
   CLIENT_NOTICE_TEXT: z.string().max(500).optional(),
   CLIENT_NOTICE_SEVERITY: z.enum(["info", "warning"]).default("info"),
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
+  // Requests admitted at once (receipt until response headers) and per client network.
+  HTTP_MAX_IN_FLIGHT: z.coerce.number().int().min(8).max(2048).default(128),
+  HTTP_MAX_PER_CLIENT: z.coerce.number().int().min(2).max(512).default(24),
   API_ORIGIN: z.url().default("http://localhost:3000"),
   TRUSTED_ORIGINS: z.string().default("http://localhost:3000"),
   TRUSTED_PROXY_CIDRS: z.string().default(""),

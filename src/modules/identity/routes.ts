@@ -58,7 +58,8 @@ export function createIdentityRoutes(
   const blockedDomains = disposableDomains(config);
   const eligibilitySecretValue = eligibilitySecret(config);
   const app = new Hono();
-  const capacity = Math.max(1, Math.floor(config.DB_POOL_SIZE / 3));
+  // Leave a quarter of the pool for authenticated traffic during a sign-in burst.
+  const capacity = Math.max(3, Math.ceil(config.DB_POOL_SIZE * 0.75));
   let active = 0;
   app.use("*", async (_c, next) => {
     if (active >= capacity) return errorResponse(new AppError("rate_limited", 429, 1));
