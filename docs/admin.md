@@ -60,13 +60,31 @@ docker compose --project-name zephium-admin --env-file /etc/zephium/admin.env -f
 
 Do not use `echo PASSWORD` or include a password in command arguments. Local provisioning creates a separate operator account; there is no public signup or password-reset flow. Log in at the new origin, enroll an authenticator, save the displayed backup codes securely, and verify a TOTP code before opening reports. Later logins require MFA again; trusted-device shortcuts are disabled and sessions expire after one hour. Operator recovery or revocation is a local maintenance operation, not an exposed reset endpoint. The same CLI accepts `disable EMAIL`, `revoke EMAIL`, and `reset-password EMAIL` (new password over stdin). Disable immediately blocks report access. Stop the admin listener before revoke or password reset to exclude sign-ins already in flight; reset preserves authenticator enrollment and disabled status. Restart only after the command succeeds.
 
+## Reports
+
+Every report is a read-only, audited GET against the report role's views:
+
+| Page | Endpoint | Source views |
+| --- | --- | --- |
+| Overview | `/api/overview?days=1\|7\|30` | accounts, requests, billing, spend against the active policy's budget caps |
+| Revenue | `/api/revenue` | reconciled billing state mapped through the active policy; MRR uses `ADMIN_PLAN_PRICES` |
+| Activity | `/api/activity?days=30\|90` | daily UTC signups, new paid subscriptions, calls, active users, failures, stops, credits, provider cost |
+| Jobs | `/api/jobs` | pending, retrying and exhausted rows per durable queue, with the oldest due age |
+| Users | `/api/users?q=&filter=` and `/api/users/:id` | account, billing state, grants, plan changes, checkouts, sessions (device and dates only), 30-day usage |
+| Waitlist | `/api/waitlists/linux` and `/export` | counts on screen; CSV export pages of 1,000 with a separate read budget |
+| Audit | `/api/audit` | operator activity, newest first |
+
+`ADMIN_PLAN_PRICES` (for example `pro:monthly=2000,max:monthly=10000`, minor units per billing interval) is display-only and never affects billing. Without it, MRR is reported as unavailable rather than zero. Revenue reflects reconciled subscription state, not a payment ledger; Polar remains the source of truth for invoices and refunds.
+
+Apply admin migrations with `bun scripts/admin-migrate.ts` (`ADMIN_MIGRATOR_DATABASE_URL`); it applies every numbered file in `src/modules/admin/migrations` once and grants the report role SELECT on new views when that role exists. The admin process refuses to start if its report role can read anything outside the approved view list.
+
 ## Check staging before wider use
 
 Verify the image and schema, refusal of broad database roles, exact proxy routing, TLS, and private port exposure. Complete real-browser owner provisioning, authenticator enrollment, logout/login with MFA, backup-code handling, wrong-code throttling, and session expiry. Confirm that customer cookies and credentials cannot obtain reports and that unverified operator sessions cannot access them. Inspect the responsive UI, account lookup, empty states, and reporting values against known staging data.
 
 Usage windows are 1, 7, or 30 days; user details use 30 days. Charged credit units, known provider cost, and persisted budget exposure have different meanings. Known provider cost excludes unknown or pending usage, and is not a provider invoice. Unexpired checkout records reflect local expiry rather than confirmed provider checkout status. Balances exclude expired or revoked spendable credit while retaining outstanding reservations. Reports do not issue grants on read.
 
-Admin audit events retain operator, action, target, and timestamp metadata for 30 days. The running process removes expired events in bounded batches every minute, alongside expired auth and throttle records. Backups have their own retention and may retain older records; stopping the process also stops this cleanup.
+Admin audit events retain operator, action, target, and timestamp metadata for 400 days and are visible on the Audit page. Searches record the matched account rather than the typed address. The running process removes expired events in bounded batches every minute, alongside expired auth and throttle records. Backups have their own retention and may retain older records; stopping the process also stops this cleanup.
 
 Measure idle memory, peak memory and CPU during login and representative report reads, PostgreSQL query latency, and the effect on customer API/worker traffic on the actual staging host. Confirm recovery after restart and the read-only filesystem under the chosen caps. Record these observations before proposing production use. Automated tests and initial container limits do not establish real staging behavior or a production resource budget.
 
